@@ -1,22 +1,36 @@
 from dash import Dash, dcc, html, Input, Output, State, ctx
 from dash_daq import BooleanSwitch
-import plotly.graph_objects as go
-import numpy as np
-import plotly.express as px
-from sklearn.model_selection import train_test_split
-import torch
 
-from data_set_generation import exclusion_area, generate_data
+import plotly.graph_objects as go
+import plotly.express as px
+
+import numpy as np
+import torch
+from sklearn.model_selection import train_test_split
+
+from data_set_generation import exclusion_area, generate_data, generate_shifted
 from model_architectures import basic_nn, dimension_increaser
 import model_train
+
 def interactive_plot():
     global base_x
     global base_y 
     global user_points
-    global selected_class 
+
+    global shifted_x
+    global shifted_y
+    global shifted_user_points
+
+    global selected_class
+
+    global num_points
 
     selected_class = False
+    num_points = 200
     base_x, base_y, user_points = generate_data(200)
+    shifted_x, shifted_y, shifted_user_points = generate_shifted(num_points=5, shift=[0.5,0.5])
+
+
     app = Dash(__name__)
 
 #------- UI elements -------#
@@ -84,7 +98,7 @@ def interactive_plot():
             id='num-points',
             type='number',
             placeholder="200",  # A hint to the user of what can be entered in the control
-            debounce=False,                      # Changes to input are sent to Dash server only on enter or losing focus
+            debounce=True,                      # Changes to input are sent to Dash server only on enter or losing focus
             value =200,
             min=2, max=10000, step=200,         # Ranges of numeric value. Step refers to increments
             minLength=1, maxLength=5,          # Ranges for character length inside input box
@@ -94,8 +108,9 @@ def interactive_plot():
             style={'background-color':'#FFFFFF', 
                    'width':'20%', 
                    'height':'10%', 
-                   'margin':'0 auto'},
-        )
+                   'margin-right': '10px'},
+        ),
+        html.Button('Correlation Matrix', id='corr', n_clicks=0, style={'margin-right': '10px'})
 
     ], style={
         'margin-top': '20px',
@@ -103,7 +118,7 @@ def interactive_plot():
         'backgroundColor': '#b2b1b5',
         'padding': '10px',
         'borderRadius': '5px',
-        'width': '20%'
+        'width': '30%'
     })
     #---- Toggle for selecting classes ----#
     class_switch = html.Div(
@@ -138,16 +153,20 @@ def interactive_plot():
                   Input("radius", "value"),  # radius sliders ID
                   Input("x_coord", "value"), # x coordinate field ID
                   Input("y_coord", "value"), # y coordinate field ID
-                  [Input('generate', 'n_clicks')], # generate button ID
-                  [Input('graph', 'clickData')],
-                  Input("num-points", "value"),) # click ID
+                  Input('generate', 'n_clicks'), # generate button ID
+                  Input('graph', 'clickData'), # click ID
+                  Input("num-points", "value"),
+                  Input('corr', 'n_clicks')) 
     #----- Interactive portion of Figure -----#
     # Called whenever an UI element is interated with
-    def update_figure(radius, x_coord, y_coord, n_clicks, clickData, num_points): 
+    def update_figure(radius, x_coord, y_coord, n_clicks, clickData, new_num_points, gen_corr): 
         global base_x
         global base_y
+        global shifted_x
+        global shifted_y
         global user_points
         global selected_class
+        global num_points
 
         # Upon button press generate new data
         if "generate" == ctx.triggered_id:
@@ -157,7 +176,8 @@ def interactive_plot():
         elif "graph" == ctx.triggered_id:
             add_point(clickData)
         
-        #elif "num-points" == ctx.triggered_id:
+        elif "num-points" == ctx.triggered_id:
+            num_points = new_num_points
             
         
         #-- Check if feilds are filled --#
@@ -190,16 +210,25 @@ def interactive_plot():
                           model= model,
                           dim_inc= dim_inc)
         
-        cov = model_train.featureCovarience(curr_x,model,dim_inc)
-        plot_cov(cov)
         V = model_train.test(test_input, model, dim_inc)
+        #pc = model_train.compress_features(curr_x,model,None)
+
         Z = V.view(-1).numpy()
 
         Z = Z.reshape(xx.shape)
 
-        #plot points
-        px_fig = px.scatter(x=curr_x[:,0], y=curr_x[:,1], color=curr_y, color_continuous_scale=["orange","purple"])
+        if "corr" == ctx.triggered_id:
+            corr = model_train.feature_correlation(curr_x,model,dim_inc)
+            heatmap = px.imshow(corr, text_auto=True, color_continuous_scale= 'RdBu')
+            heatmap.show()
 
+        #plot points
+        plot_x = np.append(curr_x,shifted_x, axis=0)
+        plot_y = np.append(curr_y,np.add(shifted_y, 2))
+        print(plot_x.shape)
+
+        px_fig = px.scatter(x=plot_x[:,0], y=plot_x[:,1], color=np.char.mod('%s', plot_y))
+        
         # add countour map
         px_fig.add_trace(
         go.Contour(
@@ -222,7 +251,7 @@ def interactive_plot():
 
         # Ensure square aspect ratio
         px_fig.update_layout(
-        showlegend=False,
+        showlegend=True,
         autosize=False,
         width=1000,
         height=1000
@@ -261,7 +290,23 @@ def add_point(clickData):
 
         user_points = np.append(user_points, 1)
         
-def plot_cov(cov):
-    fig = px.imshow(cov, text_auto=True)
-    fig.show()
+def add_test_point(clickData):
+    global shifted_x
+    global shifted_y
+    global user_points
+    # if the user has clicked to add new point
+    if clickData is None: # make sure they actually clicked
+        return
+    else:
+        new_x = clickData['points'][0]['x']
+        new_y = clickData['points'][0]['y']
+
+        shifted_x = np.vstack([shifted_x, np.array([new_x, new_y])])
+        if selected_class:
+            base_y = np.append(shifted_y, 1)
+        else:
+            base_y = np.append(shifted_y, 1)
+
+        user_points = np.append(user_points, 1)
+
 interactive_plot()

@@ -3,11 +3,14 @@ import numpy as np
 import torch.nn as nn
 from torch.utils.data.dataset import TensorDataset
 from torch.utils.data import DataLoader
-
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ExponentialLR
+
 from model_architectures import basic_nn, dimension_increaser
 from data_set_generation import generate_data, plot_data_static
+
+from sklearn.decomposition import PCA
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 def train(x: np.ndarray,
           y: np.ndarray,
@@ -23,7 +26,7 @@ def train(x: np.ndarray,
     y = torch.from_numpy(y).float()
 
     dataset = TensorDataset(x, y)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     loss_fn = torch.nn.BCELoss()
     optimizer = SGD(model.parameters(), lr=lr)
     #scheduler = ExponentialLR(optimizer,0.95)
@@ -32,15 +35,14 @@ def train(x: np.ndarray,
     model.train()
     for epoch in range(num_epochs):
         overall_loss = 0
+        total_embeddings = None
         for batch_idx, (x, y) in enumerate(dataloader):
             optimizer.zero_grad()
             #x = dim_inc(x)
-            x = model(x)
-            x = x.view(-1)
-            #print(abs(x-y))
-            
-            #print(x,y)
-            loss = loss_fn(x, y)
+            output = model(x)
+            output = output.view(-1)
+
+            loss = loss_fn(output, y)
             
             overall_loss += loss.item()
             
@@ -48,10 +50,16 @@ def train(x: np.ndarray,
 
             optimizer.step()
 
+            if total_embeddings == None:
+                total_embeddings = model.forwardEmbeddings(x)
+            else:
+                total_embeddings = torch.cat((total_embeddings,model.forwardEmbeddings(x)),dim=0)
+
+        model.dropout.update_distribution(total_embeddings, train_dist=True)
         #scheduler.step()
         #print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
     #----Test ----
-def test(x, model, dim_inc):
+def test(x: np.ndarray, model: basic_nn, dim_inc: dimension_increaser):
     x = torch.from_numpy(x).float()
     model.eval()
     with torch.no_grad():
@@ -59,11 +67,27 @@ def test(x, model, dim_inc):
         x = model(x)
     return x
 
-def featureCovarience(x, model, dim_inc):
+def feature_correlation(x: np.ndarray, model: basic_nn, dim_inc: dimension_increaser):
     x = torch.from_numpy(x).float()
     #x = dim_inc(x)
-    x = model.forwardEmbeddigns(x).detach().numpy()
-    cov = np.cov(x, rowvar= False)
-    cov = np.linalg.norm(cov)
-    return cov
-    
+    x = model.forwardEmbeddings(x).detach().numpy()
+    cor = np.corrcoef(x, rowvar=False)
+    return cor
+
+def compress_features(x: np.ndarray, model: basic_nn, dim_inc: dimension_increaser, type = 'lda'):
+    x = torch.from_numpy(x).float()
+    #x = dim_inc(x)
+    y = model.forward(x).detach()
+    y = y.view(-1).numpy()
+    y = np.round(y)
+    x = model.forwardEmbeddings(x).detach().numpy()
+
+    result = None
+    if type == 'pca':
+        pca = PCA(n_components=2)
+        result = pca.fit_transform(x)
+    elif type == 'lda':
+        lda = LinearDiscriminantAnalysis(n_components=1)
+        result = lda.fit_transform(x,y)
+    return result
+
