@@ -47,7 +47,7 @@ def generate_data(num_points: int, type = 'blobs'):
         x,y = make_blobs(n_samples=num_points,
                         n_features=2,
                         centers= [[-1,1],[1,-1]],
-                        cluster_std= 0.4)
+                        cluster_std= 0.35)
         
     user_points = np.zeros(num_points, dtype=np.int8)
 

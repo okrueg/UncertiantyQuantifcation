@@ -9,14 +9,14 @@ import torch
 from sklearn.model_selection import train_test_split
 
 from data_set_generation import exclusion_area, generate_data, generate_shifted
-from model_architectures import basic_nn, dimension_increaser
+from model_architectures import basic_nn, dimension_increaser, shifted_dist_dropout
 import model_train
 
 class model_visualizer():
     def __init__(self):
         self.base_x, self.base_y, self.user_points = generate_data(200)
 
-        self.shifted_x, self.shifted_y, self.shifted_user_points = generate_shifted(num_points=5, shift=[0.5,0.5])
+        self.shifted_x, self.shifted_y, self.shifted_user_points = generate_shifted(num_points=5, shift=[-2,0])
 
         self.selected_class = False
         self.num_points = 200
@@ -161,6 +161,7 @@ class model_visualizer():
             match ctx.triggered_id:
                 case "generate": # Upon button press generate new data
                     self.base_x, self.base_y, self.user_points = generate_data(self.num_points)
+                    self.shifted_x, self.shifted_y, self.shifted_user_points = generate_shifted(num_points=5, shift=[-2,0])
                 
                 case "graph":
                     self.add_point(clickData)
@@ -185,9 +186,14 @@ class model_visualizer():
             xx, yy = np.meshgrid(xrange, yrange)
             test_input = np.c_[xx.ravel(), yy.ravel()]
 
+            self.model = basic_nn(input_dim=2,
+                            hidden_dim=20,
+                            output_dim=1)
+
             #apply NN to points
             model_train.train(curr_x,
                             curr_y,
+                            self.shifted_x,
                             model= self.model,
                             dim_inc= self.dim_inc)
             
@@ -207,7 +213,10 @@ class model_visualizer():
             plot_y = np.append(curr_y,np.add(self.shifted_y, 2))
             #print(plot_x.shape)
 
-            px_fig = px.scatter(x=plot_x[:,0], y=plot_x[:,1], color=np.char.mod('%s', plot_y))
+            px_fig = px.scatter(x=plot_x[:,0], y=plot_x[:,1], color=np.char.mod('%s', plot_y),
+                                 color_discrete_map={
+                                    "0": "red",
+                                    "1": "blue",})
             
             # add countour map
             px_fig.add_trace(
