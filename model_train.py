@@ -14,6 +14,7 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 def train(x: np.ndarray,
           y: np.ndarray,
+          shift: np.ndarray,
           model: basic_nn,
           dim_inc: dimension_increaser,
           num_epochs = 40,
@@ -24,12 +25,16 @@ def train(x: np.ndarray,
 
     x = torch.from_numpy(x).float()
     y = torch.from_numpy(y).float()
+    shift = torch.from_numpy(shift).float()
+
+    x_class1 = x[y == 1]
 
     dataset = TensorDataset(x, y)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     loss_fn = torch.nn.BCELoss()
     optimizer = SGD(model.parameters(), lr=lr)
     #scheduler = ExponentialLR(optimizer,0.95)
+
 
     #-----Train ----
     model.train()
@@ -50,12 +55,16 @@ def train(x: np.ndarray,
 
             optimizer.step()
 
-            if total_embeddings == None:
-                total_embeddings = model.forwardEmbeddings(x)
-            else:
-                total_embeddings = torch.cat((total_embeddings,model.forwardEmbeddings(x)),dim=0)
+        # get embeddings for dropout
+        shift_dist = model.forwardEmbeddings(shift)
+        total_embeddings = model.forwardEmbeddings(x_class1)
 
+        # update dropout distributions
         model.dropout.update_distribution(total_embeddings, train_dist=True)
+        model.dropout.update_distribution(shift_dist, train_dist=False)
+
+        # decay alpha value to slowly introduce dropout
+        model.dropout.alpha = model.dropout.alpha * .75
         #scheduler.step()
         #print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
     #----Test ----
