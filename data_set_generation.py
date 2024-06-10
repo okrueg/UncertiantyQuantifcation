@@ -28,7 +28,7 @@ def plot_data_static(x: np.ndarray, y: np.ndarray, circle = None):
     plt.show()
 
 #-- Just a default tuned generation --#
-def generate_data(num_points: int, type = 'blobs'):
+def generate_data(num_points: int, type = 'moons'):
     x,y = None, None
     if type == 'classification':
         x, y = make_classification(n_samples= num_points,
@@ -42,20 +42,21 @@ def generate_data(num_points: int, type = 'blobs'):
                                     )
     elif type == 'moons':
         x,y = make_moons(n_samples=num_points,
-                         noise=0.1)
+                         noise=0.1,
+                         random_state=1)
     elif type == 'blobs':
         x,y = make_blobs(n_samples=num_points,
                         n_features=2,
-                        centers= [[-1,1],[1,-1]],
-                        cluster_std= 0.35)
+                        centers= [[-1,1.5],[1,-1.5]],
+                        cluster_std= 0.4)
         
     user_points = np.zeros(num_points, dtype=np.int8)
 
     return x,y, user_points
 
-def generate_shifted(num_points: int, shift= [0,0], type = 'blobs'):
+def generate_shifted(num_points: int, center= [0,0], type = 'blobs'):
     x,y = None, None
-    centers = np.array([1+shift[0], -1+shift[1]])
+    centers = np.array([center[0], center[1]])
     centers = centers.reshape(1,-1)
     if type == 'blobs':
         x,y = make_blobs(n_samples=num_points,

@@ -7,27 +7,66 @@ import plotly.express as px
 import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
+from sklearn.decomposition import PCA
+from openTSNE import TSNE
 
 from data_set_generation import exclusion_area, generate_data, generate_shifted
 from model_architectures import basic_nn, dimension_increaser, shifted_dist_dropout
 import model_train
 
+
+class feature_reduction():
+    def __init__(self, red_type):
+        self.red_type = red_type
+        self.fitted = False
+        match red_type:
+            case 'pca':
+                self.reduction = PCA(n_components=2)
+            case 'tsne':
+                self.reduction = TSNE(n_components=2,
+                                      perplexity=20)
+            case _:
+                raise Exception("Not a valid reduction type")
+    
+    def fit(self, x, model, dim_red):
+        x = torch.from_numpy(x).float()
+        #x = dim_inc(x)
+        x = model.forwardEmbeddings(x).detach().numpy()
+        self.reduction = self.reduction.fit(x)
+        self.fitted = True
+
+    def apply(self, x, model, dim_red):
+        assert self.fitted == True
+
+        x = torch.from_numpy(x).float()
+        #x = dim_inc(x)
+        x = model.forwardEmbeddings(x).detach().numpy()
+        transformed = self.reduction.transform(x)
+        return transformed
+
+
 class model_visualizer():
     def __init__(self):
+        self.center = [2,1.5]
         self.base_x, self.base_y, self.user_points = generate_data(200)
 
-        self.shifted_x, self.shifted_y, self.shifted_user_points = generate_shifted(num_points=5, shift=[-2,0])
+        self.shifted_x, self.shifted_y, self.shifted_user_points = generate_shifted(num_points=5, center=self.center)
 
         self.selected_class = False
         self.num_points = 200
+
+        self.feature_reducer = feature_reduction(red_type='pca')
 
         self.dim_inc = dimension_increaser(input_dim=2,
                                             output_dim=2,
                                             use_activation=False)
         
         self.model = basic_nn(input_dim=2,
-                            hidden_dim=20,
+                            hidden_dim=10,
                             output_dim=1)
+        self.num_epochs = 150
+        
+        self.reduction = None
 
         self.app = Dash(__name__)
 
@@ -46,7 +85,7 @@ class model_visualizer():
                     marks=None,
                     tooltip={"placement": "bottom", "always_visible": True},
                 ),
-            ])
+            ], style={'width': '50%'})
         #---- Input field for circles X coordinates ----#
         self.circle_coords = html.Div([
             html.Label("Circle X Coordinates: ", htmlFor="x"),
@@ -137,9 +176,32 @@ class model_visualizer():
             dcc.Graph(id="graph"),
             html.Div(id='click-data')
         ])
+        self.red_graph_container = html.Div([
+            dcc.Graph(id="other"),
+        ])
+        self.epoch_slider = html.Div([
+            #---- text label for slider----#
+            html.Label("Epoch:"),
+            #---- Actual slider ----#
+            dcc.Slider(
+                min=0,
+                max=self.num_epochs-1,
+                step=1,
+                value = 0, # starting value
+                id="epoch",
+                marks={i: str(i) for i in range(0,self.num_epochs-1,5)},
+                tooltip={"placement": "bottom", "always_visible": True},
+            ),
+            ], style={'width': '50%'})
 
         # Throw HTML elements into app
-        self.app.layout = html.Div([self.graph_container,self.class_switch, self.buttons, self.circle_coords, self.radius_slider])
+        self.app.layout = html.Div([self.graph_container,
+                                    self.class_switch, 
+                                    self.buttons, 
+                                    self.circle_coords, 
+                                    self.radius_slider, 
+                                    self.red_graph_container, 
+                                    self.epoch_slider])
 
     #--- Functionality for switching classes ---#
         @self.app.callback(Input("class_switch", "on"))
@@ -156,12 +218,12 @@ class model_visualizer():
                     Input('corr', 'n_clicks')) 
         #----- Interactive portion of Figure -----#
         # Called whenever an UI element is interated with
-        def update_figure(radius, x_coord, y_coord, n_clicks, clickData, new_num_points, gen_corr): 
+        def update_main_figure(radius, x_coord, y_coord, n_clicks, clickData, new_num_points, gen_corr): 
 
             match ctx.triggered_id:
                 case "generate": # Upon button press generate new data
                     self.base_x, self.base_y, self.user_points = generate_data(self.num_points)
-                    self.shifted_x, self.shifted_y, self.shifted_user_points = generate_shifted(num_points=5, shift=[-2,0])
+                    self.shifted_x, self.shifted_y, self.shifted_user_points = generate_shifted(num_points=5, center=self.center)
                 
                 case "graph":
                     self.add_point(clickData)
@@ -187,15 +249,17 @@ class model_visualizer():
             test_input = np.c_[xx.ravel(), yy.ravel()]
 
             self.model = basic_nn(input_dim=2,
-                            hidden_dim=20,
+                            hidden_dim=10,
                             output_dim=1)
 
             #apply NN to points
-            model_train.train(curr_x,
+            drop_hist = model_train.train_2d(curr_x,
                             curr_y,
                             self.shifted_x,
                             model= self.model,
-                            dim_inc= self.dim_inc)
+                            dim_inc= self.dim_inc,
+                            num_epochs=self.num_epochs)
+            self.feature_reducer.fit(self.base_x,self.model,None)
             
             V = model_train.test(test_input, self.model, self.dim_inc)
 
@@ -204,9 +268,17 @@ class model_visualizer():
             Z = Z.reshape(xx.shape)
 
             if "corr" == ctx.triggered_id:
-                corr = model_train.feature_correlation(curr_x,self.model,self.dim_inc)
-                heatmap = px.imshow(corr, text_auto=True, color_continuous_scale= 'RdBu')
-                heatmap.show()
+                # corr = model_train.feature_correlation(curr_x,self.model,self.dim_inc)
+                # heatmap = px.imshow(corr, text_auto=True, color_continuous_scale= 'RdBu')
+                # heatmap.show()
+                drop_x = np.arange(start=0,stop=drop_hist.shape[0], step=1)
+                drop = px.line(x=drop_x, y=drop_hist[:,0])
+
+                for ind in range(drop_hist.shape[1]):
+
+                    drop.add_scatter(x=drop_x, y=drop_hist[:,ind], mode='lines')
+                    
+                drop.show()
 
             #plot points
             plot_x = np.append(curr_x,self.shifted_x, axis=0)
@@ -247,7 +319,27 @@ class model_visualizer():
             )
             return px_fig
         
-        #---- plot points ----
+        @self.app.callback(Output("other", "figure"), # output graph is what us updated
+            Input("epoch", "value"), prevent_inital_call = True)  # epoch sliders ID
+        def update_feature_fig(epoch_num):
+                path = f"models/model_{epoch_num}.path"
+                self.model.load_state_dict(torch.load(path))
+                
+                plot_x = self.feature_reducer.apply( self.base_x,model=self.model,dim_red= None )
+
+                other_fig = px.scatter(x=plot_x[:,0], y=plot_x[:,1], color=np.char.mod('%s', self.base_y),
+                                 color_discrete_map={
+                                    "0": "red",
+                                    "1": "blue",})
+                other_fig.update_layout(
+                        showlegend=True,
+                        autosize=False,
+                        width=1000,
+                        height=1000
+                        )
+                
+                return other_fig
+    #---- plot points ----
     def add_point(self, clickData):
         # if the user has clicked to add new point
         if clickData is None: # make sure they actually clicked
@@ -291,6 +383,13 @@ def build_range(X, y, lower_bounds, upper_bounds, mesh_size=.02, margin = 1):
     xrange = np.arange(lower_bounds - margin, upper_bounds + margin, mesh_size)
     yrange = np.arange(lower_bounds - margin, upper_bounds + margin, mesh_size)
     return xrange, yrange
+
+def feature_correlation(x: np.ndarray, model: basic_nn, dim_inc: dimension_increaser):
+    x = torch.from_numpy(x).float()
+    #x = dim_inc(x)
+    x = model.forwardEmbeddings(x).detach().numpy()
+    cor = np.corrcoef(x, rowvar=False)
+    return cor
 
 
 vis = model_visualizer()

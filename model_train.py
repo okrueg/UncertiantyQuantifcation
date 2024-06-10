@@ -1,3 +1,4 @@
+import random
 import torch
 import numpy as np
 import torch.nn as nn
@@ -5,21 +6,23 @@ from torch.utils.data.dataset import TensorDataset
 from torch.utils.data import DataLoader
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ExponentialLR
+from torchvision import datasets
+from torchvision.transforms import v2
+from torchvision.transforms.functional import rotate
 
-from model_architectures import basic_nn, dimension_increaser
+from model_architectures import basic_nn, dimension_increaser, basic_cnn
 from data_set_generation import generate_data, plot_data_static
+from torch.utils.data.sampler import  SubsetRandomSampler  #for validation test
 
-from sklearn.decomposition import PCA
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
-def train(x: np.ndarray,
+def train_2d(x: np.ndarray,
           y: np.ndarray,
           shift: np.ndarray,
           model: basic_nn,
           dim_inc: dimension_increaser,
-          num_epochs = 40,
+          num_epochs = 100,
           batch_size = 10,
-          hidden_dim = 20,
+          hidden_dim = 10,
           in_dims = 10,
           lr = 0.1):
 
@@ -31,20 +34,27 @@ def train(x: np.ndarray,
 
     dataset = TensorDataset(x, y)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
     loss_fn = torch.nn.BCELoss()
-    optimizer = SGD(model.parameters(), lr=lr)
+    optimizer = SGD(model.parameters(), lr=lr, weight_decay=0.001)
     #scheduler = ExponentialLR(optimizer,0.95)
+
+    drop_history = np.empty(hidden_dim)
 
 
     #-----Train ----
     model.train()
     for epoch in range(num_epochs):
+        
         overall_loss = 0
         total_embeddings = None
+        torch.save(model.state_dict(), f"models/model_{epoch}.path")
+
         for batch_idx, (x, y) in enumerate(dataloader):
             optimizer.zero_grad()
             #x = dim_inc(x)
             output = model(x)
+
             output = output.view(-1)
 
             loss = loss_fn(output, y)
@@ -63,40 +73,24 @@ def train(x: np.ndarray,
         model.dropout.update_distribution(total_embeddings, train_dist=True)
         model.dropout.update_distribution(shift_dist, train_dist=False)
 
+        #print(torch.mean(model.dropout.recent_mean_diff))
+
+        drop_history = np.vstack((drop_history, model.dropout.recent_mean_diff))
+
         # decay alpha value to slowly introduce dropout
-        model.dropout.alpha = model.dropout.alpha * .75
+        model.dropout.alpha = model.dropout.alpha * .9
+
+    return drop_history
         #scheduler.step()
         #print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
-    #----Test ----
-def test(x: np.ndarray, model: basic_nn, dim_inc: dimension_increaser):
+
+
+        
+#----Test ----
+def test_2d(x: np.ndarray, model: basic_nn, dim_inc: dimension_increaser):
     x = torch.from_numpy(x).float()
     model.eval()
     with torch.no_grad():
         #x = dim_inc(x)
         x = model(x)
     return x
-
-def feature_correlation(x: np.ndarray, model: basic_nn, dim_inc: dimension_increaser):
-    x = torch.from_numpy(x).float()
-    #x = dim_inc(x)
-    x = model.forwardEmbeddings(x).detach().numpy()
-    cor = np.corrcoef(x, rowvar=False)
-    return cor
-
-def compress_features(x: np.ndarray, model: basic_nn, dim_inc: dimension_increaser, type = 'lda'):
-    x = torch.from_numpy(x).float()
-    #x = dim_inc(x)
-    y = model.forward(x).detach()
-    y = y.view(-1).numpy()
-    y = np.round(y)
-    x = model.forwardEmbeddings(x).detach().numpy()
-
-    result = None
-    if type == 'pca':
-        pca = PCA(n_components=2)
-        result = pca.fit_transform(x)
-    elif type == 'lda':
-        lda = LinearDiscriminantAnalysis(n_components=1)
-        result = lda.fit_transform(x,y)
-    return result
-
