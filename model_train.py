@@ -21,7 +21,7 @@ def train_2d(x: np.ndarray,
           model: basic_nn,
           dim_inc: dimension_increaser,
           num_epochs = 100,
-          batch_size = 10,
+          batch_size = 20,
           hidden_dim = 10,
           in_dims = 10,
           lr = 0.1):

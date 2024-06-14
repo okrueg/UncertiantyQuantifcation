@@ -261,7 +261,7 @@ class model_visualizer():
                             num_epochs=self.num_epochs)
             self.feature_reducer.fit(self.base_x,self.model,None)
             
-            V = model_train.test(test_input, self.model, self.dim_inc)
+            V = model_train.test_2d(test_input, self.model, self.dim_inc)
 
             Z = V.view(-1).numpy()
 
