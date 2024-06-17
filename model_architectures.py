@@ -110,6 +110,7 @@ class basic_cnn(nn.Module):
         return w * (desired / (self._eps + norm))
 
 class Class_confusion_dropout(nn.Module):
+    # Nice name ;-)
     def __init__(self, drop_percent):
         super().__init__()
 
@@ -122,6 +123,7 @@ class Class_confusion_dropout(nn.Module):
         self.info = None
 
     def get_mask(self, x):
+        # TODO: Overlap with get_stats method!
         #retrieve the indicies of the 2 highest model predictions
         top_ind = torch.topk(self.prev_output, k=2, dim=1)[1]
 
@@ -141,6 +143,7 @@ class Class_confusion_dropout(nn.Module):
 
         mask = torch.ones_like(x).bool()
 
+        # TODO: Check shape of mask and x - I think something like x[mask] should work without the loop!
         for batch_indx, _ in enumerate(mask):
             mask[batch_indx][dropped_channels[batch_indx]] = False
 
@@ -155,6 +158,8 @@ class Class_confusion_dropout(nn.Module):
 
         selected_weight_diffs = abs(selected_weight_cols[:, 0, :] - selected_weight_cols[:, 1, :]).detach() #Shape: batch, feature size
 
+        # TODO: Bug! If x contains negative values, you are missing these, if they are important, cause the abs
+        # is currently at the wrong position.
         #weight * channel, Higher Score means higherdrop rate
         scores = x * selected_weight_diffs #Shape: batch, feature
 

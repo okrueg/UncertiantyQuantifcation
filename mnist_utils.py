@@ -78,6 +78,7 @@ def train_fas_mnist(model: basic_cnn,
     best_epoch = -1
     train_losses = []
     val_losses = []
+    # TODO: Initializing a variable without datatype (this case dict?) is very bad code style!
     drop_info_epochs = None
 
     #-----Train ----
@@ -92,6 +93,7 @@ def train_fas_mnist(model: basic_cnn,
 
             optimizer.zero_grad()
 
+            # TODO: This is only required with the new dropout implementation
             with torch.no_grad():
                 model.eval()
 
@@ -119,6 +121,7 @@ def train_fas_mnist(model: basic_cnn,
                 val_output = model(x)
                 val_loss += loss_fn(val_output, y)
 
+            # TODO: you only add the last loss value of this epoch
             train_losses.append(loss.item())
             val_losses.append(val_loss.item()/len(validloader))
 
@@ -132,6 +135,7 @@ def train_fas_mnist(model: basic_cnn,
             drop_info_epochs = model.dropout.info.copy()
         else:
             for item in model.dropout.info:
+                # TODO: Are you sure you don't need the copy statement here?
                 drop_info_epochs[item] = torch.vstack((drop_info_epochs[item], model.dropout.info[item]))            
             
         model.dropout.info = None
@@ -156,6 +160,7 @@ def test_fas_mnist(model):
             predictions = torch.max(output, dim=1)[1]
             acc = torch.eq(y, predictions).int()
 
+            # TODO: You could also sum for accuracy
             for ind, label in enumerate(y):
                 label_acc[label].append(acc[ind].item())
 
