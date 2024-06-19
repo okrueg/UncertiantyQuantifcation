@@ -10,7 +10,7 @@ from torchvision import datasets
 from torchvision.transforms import v2
 from torchvision.transforms.functional import rotate
 
-from model_architectures import basic_nn, dimension_increaser, basic_cnn
+from model_architectures import BasicNN, DimensionIncreaser, BasicCNN
 from data_set_generation import generate_data, plot_data_static
 from torch.utils.data.sampler import  SubsetRandomSampler  #for validation test
 
@@ -18,8 +18,8 @@ from torch.utils.data.sampler import  SubsetRandomSampler  #for validation test
 def train_2d(x: np.ndarray,
           y: np.ndarray,
           shift: np.ndarray,
-          model: basic_nn,
-          dim_inc: dimension_increaser,
+          model: BasicNN,
+          dim_inc: DimensionIncreaser,
           num_epochs = 100,
           batch_size = 20,
           hidden_dim = 10,
@@ -66,8 +66,8 @@ def train_2d(x: np.ndarray,
             optimizer.step()
 
         # get embeddings for dropout
-        shift_dist = model.forwardEmbeddings(shift)
-        total_embeddings = model.forwardEmbeddings(x_class1)
+        shift_dist = model.forward_embeddings(shift)
+        total_embeddings = model.forward_embeddings(x_class1)
 
         # update dropout distributions
         model.dropout.update_distribution(total_embeddings, train_dist=True)
@@ -87,7 +87,7 @@ def train_2d(x: np.ndarray,
 
         
 #----Test ----
-def test_2d(x: np.ndarray, model: basic_nn, dim_inc: dimension_increaser):
+def test_2d(x: np.ndarray, model: BasicNN, dim_inc: DimensionIncreaser):
     x = torch.from_numpy(x).float()
     model.eval()
     with torch.no_grad():
