@@ -112,6 +112,7 @@ def train_fas_mnist(model: BasicCNN,
     best_model = deepcopy(model)
     train_losses = []
     val_losses = []
+
     #-----Train ----
     for epoch in range(num_epochs):
         #----Train Model ----
@@ -128,6 +129,7 @@ def train_fas_mnist(model: BasicCNN,
 
             optimizer.zero_grad()
 
+            # TODO: This is only required with the new dropout implementation
             with torch.no_grad():
                 model.eval()
                 first_output = model(x)
@@ -160,6 +162,7 @@ def train_fas_mnist(model: BasicCNN,
                 val_output = model(x)
                 val_loss += loss_fn(val_output, y)
 
+            # TODO: you only add the last loss value of this epoch
             train_losses.append(loss.item())
             val_losses.append(val_loss.item()/len(validloader))
 
@@ -177,6 +180,7 @@ def train_fas_mnist(model: BasicCNN,
             if save_mode == 'loss':
                 if  val_loss < best_val_loss:
                     print(f"Saving new best validation loss: {val_loss:.4f} < {best_val_loss:.4f}") if verbose else None
+
 
                     best_val_loss = val_loss
 
@@ -213,6 +217,7 @@ def test_fas_mnist(model: BasicCNN, verbose = True):
             predictions = torch.max(output, dim=1)[1]
             acc = torch.eq(y, predictions).int()
 
+            # TODO: You could also sum for accuracy
             for ind, label in enumerate(y):
                 label_acc[label].append(acc[ind].item())
 

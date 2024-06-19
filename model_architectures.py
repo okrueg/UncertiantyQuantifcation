@@ -132,6 +132,7 @@ class ConfusionDropout(nn.Module):
     A special form of dropout to challenge the model by causing class confusion
     '''
     def __init__(self, drop_percent, drop_handler = None):
+      
         super().__init__()
 
         self.weight_matrix = torch.empty(0)
@@ -164,6 +165,7 @@ class ConfusionDropout(nn.Module):
 
         mask = torch.ones_like(x).bool()
 
+        # TODO: Check shape of mask and x - I think something like x[mask] should work without the loop!
         for batch_indx, _ in enumerate(mask):
             mask[batch_indx][dropped_channels[batch_indx]] = False
 
@@ -187,7 +189,6 @@ class ConfusionDropout(nn.Module):
         else:
             x = x * (1 - self.drop_percent) # keep expected value
         return x
-
 
 class DropoutDataHandler():
     '''
