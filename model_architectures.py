@@ -73,8 +73,8 @@ class BasicCNN(nn.Module):
 
         self.pool2 = nn.MaxPool2d(kernel_size=2, padding=1)
 
-        self.dropout = nn.Dropout(dropout_prob)
-        #self.dropout = ConfusionDropout(dropout_prob, DropoutDataHandler())
+        #self.dropout = nn.Dropout(dropout_prob)
+        self.dropout = ConfusionDropout(dropout_prob, DropoutDataHandler())
 
         self.fc1 = nn.Linear(2048, 1024)
 
@@ -113,8 +113,8 @@ class BasicCNN(nn.Module):
         self.fc2.weight.data = self._max_norm(self.fc2.weight.data)
         x = self.ReLU(self.fc2(x))
 
-        #x = self.dropout(x, y)
-        x = self.dropout(x)
+        x = self.dropout(x, y)
+        #x = self.dropout(x)
 
         self.fc3.weight.data = self._max_norm(self.fc3.weight.data)
         x = self.fc3(x)

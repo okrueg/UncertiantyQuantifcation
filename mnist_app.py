@@ -26,7 +26,7 @@ class MnistApp():
         self.model = BasicCNN(num_classes=10,
                               feature_size=512,
                               dropout_prob=0.5)
-        self.num_epochs = 25
+        self.num_epochs = 2
 
         if load_path is None:
             self.train_loss, self.val_loss, self.model = mnist_utils.train_fas_mnist(model=self.model,
@@ -162,7 +162,7 @@ class MnistApp():
 
             weight_diff_fig = px.imshow(img=np.transpose(weight_y),
                                         title='Channels Weight diffs',
-                                        color_continuous_scale='Sunsetdark',
+                                        color_continuous_scale='RdBu',
                                         aspect="auto")
 
             channel_fig.update_layout(

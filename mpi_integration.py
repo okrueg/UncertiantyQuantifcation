@@ -1,8 +1,7 @@
 from mpi4py import MPI
-from model_architectures import BasicCNN
+
 import numpy as np
 from itertools import chain
-
 import mnist_utils
 
 def dual_split(size, data):

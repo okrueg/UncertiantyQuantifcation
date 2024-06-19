@@ -149,7 +149,8 @@ def train_fas_mnist(model: BasicCNN,
 
             optimizer.step()
 
-        #model.dropout.drop_handeler.add_epoch()
+        if hasattr(model.dropout, "drop_handeler"):
+            model.dropout.drop_handeler.add_epoch()
         model.eval()
         with torch.no_grad():
             for batch_idx, (x, y, sub) in enumerate(validloader):
