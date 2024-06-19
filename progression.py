@@ -9,7 +9,7 @@ import torch
 from sklearn.model_selection import train_test_split
 
 from data_set_generation import exclusion_area, generate_data, generate_shifted
-from model_architectures import basic_nn, dimension_increaser, shifted_dist_dropout
+from model_architectures import BasicNN, DimensionIncreaser, shiftedDistDropout
 import model_train
 
 class progress():
