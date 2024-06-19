@@ -1,21 +1,20 @@
-from dash import Dash, dcc, html, Input, Output, State, ctx
-from dash_daq import BooleanSwitch
-
-import plotly.graph_objects as go
+'''
+Anti-Linter Measures
+'''
+from dash import Dash, dcc, html, Input, Output
+#import dash_bootstrap_components as dbc , external_stylesheets=[dbc.themes.DARKLY]
+#import plotly.graph_objects as go
 import plotly.express as px
 
-import pandas as pd
+#import pandas as pd
 import numpy as np
 import torch
-from sklearn.model_selection import train_test_split
-from sklearn.decomposition import PCA
-from openTSNE import TSNE
 
 
-from model_architectures import basic_cnn
+from model_architectures import BasicCNN
 import mnist_utils
 
-class mnist_app():
+class MnistApp():
     """
     if
         
@@ -24,18 +23,21 @@ class mnist_app():
 
         self.app = Dash(__name__)
 
-        self.model = basic_cnn(num_classes=10)
+        self.model = BasicCNN(num_classes=10,
+                              feature_size=512,
+                              dropout_prob=0.5)
         self.num_epochs = 2
 
-        if load_path == None:
-            self.train_loss, self.val_loss, self.drop_info = mnist_utils.train_fas_mnist(model=self.model,
-                                                                        num_epochs=self.num_epochs)
-        else:   
+        if load_path is None:
+            self.train_loss, self.val_loss, self.model = mnist_utils.train_fas_mnist(model=self.model,
+                                                                        num_epochs=self.num_epochs,
+                                                                        save=True, save_mode= 'accuracy')
+        else:
             self.model.load_state_dict(torch.load(load_path))
             self.train_loss = train_loss
             self.val_loss = val_loss
 
-        
+
         self.label_acc, self.total = mnist_utils.test_fas_mnist(self.model)
         self.label_acc = np.array(self.label_acc)
 
@@ -81,18 +83,25 @@ class mnist_app():
         ], style={'display': 'flex'})
 
         # Throw HTML elements into app
-        self.app.layout = html.Div([self.graph_container, self.dropout_graphs, self.epoch_slider, self.buttons])
+        self.app.layout = html.Div([self.graph_container,
+                                    self.dropout_graphs,
+                                    self.epoch_slider,
+                                    self.buttons])
 
         @self.app.callback(Output("dropout_label", "children"),
-                    Input('dropout_dropdown', 'value')) 
+                    Input('dropout_dropdown', 'value'))
         def update_dropout(dropout_type):
             return dropout_type
-           
+
         @self.app.callback(Output("label_acc", "figure"),
                            Input('corr', 'n_clicks')) # output graph is what us updated
-        def update_bar(corr): 
+        def update_bar(corr):
             y= np.arange(0,10,1)
-            fig  = px.bar(x=self.label_acc, y=y,color=self.label_acc, orientation='h', color_continuous_scale = 'sunsetdark')
+            fig  = px.bar(x=self.label_acc,
+                           y=y,
+                           color=self.label_acc,
+                           orientation='h',
+                           color_continuous_scale = 'sunsetdark')
 
             fig.update_layout(
                         showlegend=True,
@@ -108,7 +117,7 @@ class mnist_app():
                 #ticktext=['0', 'Five', 'Ten', 'Fifteen', 'Twenty']
             )
             return fig
-        
+
         @self.app.callback(Output("training_stats", "figure"),
                            Input('corr', 'n_clicks')) # output graph is what us updated
         def update_train(corr):
@@ -124,52 +133,64 @@ class mnist_app():
                         xaxis_title="Epoch",
                         yaxis_title="Loss"
                         )
-            
+
             return fig
-        
+
         @self.app.callback(Output("dropped_channels", "figure"),
                            Output("confused_labels", "figure"),
                            Input('label_dropdown', 'value'),
                            Input('epoch', 'value')) # output graph is what us updated
-        
+
         def update_drop_info(selected_label: str, epoch):
             selected_label = int(selected_label)
 
-            selected_info = self.drop_info[selected_label]
+            dropped_y = self.model.dropout.drop_handeler.forward_info(epoch,
+                                                                      selected_label,
+                                                                      'dropped_channels')
+            weight_y = self.model.dropout.drop_handeler.forward_info(epoch,
+                                                                     selected_label,
+                                                                     'weight_diffs')
 
-            dropped_y = selected_info["dropped_channels"].numpy()
-            weight_y = selected_info["weight_diffs"].numpy()
+            dropped_y = dropped_y.numpy()
+            weight_y = weight_y.numpy()
 
-            dropped_y = dropped_y[epoch]
-            weight_y = weight_y[epoch]
 
-            channel_fig = px.imshow(img=np.transpose(dropped_y), title='Most Dropped Channels', color_continuous_scale='Sunsetdark', aspect="auto")
-            
-            weight_diff_fig = px.imshow(img=np.transpose(weight_y), title='Channels Weight diffs', color_continuous_scale='Sunsetdark', aspect="auto")
+            channel_fig = px.imshow(img=np.transpose(dropped_y),
+                                    title='Most Dropped Channels',
+                                    color_continuous_scale='Sunsetdark',
+                                    aspect="auto")
+
+            weight_diff_fig = px.imshow(img=np.transpose(weight_y),
+                                        title='Channels Weight diffs',
+                                        color_continuous_scale='RdBu',
+                                        aspect="auto")
 
             channel_fig.update_layout(
                     showlegend=False,
                     #autosize=False,
                     width=900,
-                    height=500,
+                    height=700,
                     xaxis_title="Batch idx",
                     yaxis_title="Channel"
                     )
-            
+
             weight_diff_fig.update_layout(
                         showlegend=False,
                         #autosize=False,
                         width=900,
-                        height=500,
+                        height=700,
                         xaxis_title="Batch idx",
                         yaxis_title="Channel"
                         )
-            #print(selected_info["selected_weight_indexs"].shape, selected_info["weight_diffs"].shape)
-            
+        #print(selected_info["selected_weight_indexs"].shape, selected_info["weight_diffs"].shape)
+
             return (channel_fig, weight_diff_fig)
 
     def run(self):
+        '''
+        runs the app
+        '''
         self.app.run(debug=False)
 
-vis = mnist_app(load_path=None)
+vis = MnistApp(load_path=None)
 vis.run()

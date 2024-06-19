@@ -11,7 +11,7 @@ from sklearn.decomposition import PCA
 from openTSNE import TSNE
 
 from data_set_generation import exclusion_area, generate_data, generate_shifted
-from model_architectures import basic_nn, dimension_increaser, shifted_dist_dropout
+from model_architectures import BasicNN, DimensionIncreaser, shiftedDistDropout
 import model_train
 
 
@@ -57,11 +57,11 @@ class model_visualizer():
 
         self.feature_reducer = feature_reduction(red_type='pca')
 
-        self.dim_inc = dimension_increaser(input_dim=2,
+        self.dim_inc = DimensionIncreaser(input_dim=2,
                                             output_dim=2,
                                             use_activation=False)
         
-        self.model = basic_nn(input_dim=2,
+        self.model = BasicNN(input_dim=2,
                             hidden_dim=10,
                             output_dim=1)
         self.num_epochs = 150
@@ -248,7 +248,7 @@ class model_visualizer():
             xx, yy = np.meshgrid(xrange, yrange)
             test_input = np.c_[xx.ravel(), yy.ravel()]
 
-            self.model = basic_nn(input_dim=2,
+            self.model = BasicNN(input_dim=2,
                             hidden_dim=10,
                             output_dim=1)
 
@@ -384,10 +384,10 @@ def build_range(X, y, lower_bounds, upper_bounds, mesh_size=.02, margin = 1):
     yrange = np.arange(lower_bounds - margin, upper_bounds + margin, mesh_size)
     return xrange, yrange
 
-def feature_correlation(x: np.ndarray, model: basic_nn, dim_inc: dimension_increaser):
+def feature_correlation(x: np.ndarray, model: BasicNN, dim_inc: DimensionIncreaser):
     x = torch.from_numpy(x).float()
     #x = dim_inc(x)
-    x = model.forwardEmbeddings(x).detach().numpy()
+    x = model.forward_embeddings(x).detach().numpy()
     cor = np.corrcoef(x, rowvar=False)
     return cor
 
