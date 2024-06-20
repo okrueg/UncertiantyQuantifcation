@@ -2,9 +2,12 @@ from mpi4py import MPI
 
 import numpy as np
 from itertools import chain
-import mnist_utils
+import model_utils
 
 def dual_split(size, data):
+    '''
+    Can somtimes divide the data better onto the cores
+    '''
 
     if (size/data.shape[0]) % 1 != 0:
         raise ValueError("Cannot dual split")
@@ -28,11 +31,11 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-GRID_SIZE = 3
-EPOCHS = 10
+GRID_SIZE = 5
+EPOCHS = 25
 
 if rank == 0:
-    data = mnist_utils.model_grid_generator((0, 0.75), (10, 512), num=grid_size)
+    data = model_utils.model_grid_generator(drop_prob_range=(0, 0.75), feature_size_range=(10, 512), num=GRID_SIZE)
     print(f'data shape: {data.shape}')
 
     if size > data.shape[0]:
@@ -53,7 +56,7 @@ else:
 local_chunk = comm.scatter(final_chunks, root=0)
 
 
-local_result = mnist_utils.model_grid_training(local_chunk, EPOCHS, rank)
+local_result = model_utils.model_grid_training(local_chunk, EPOCHS, rank)
 
 
 gathered_results = comm.gather(local_result, root=0)
@@ -62,7 +65,7 @@ gathered_results = comm.gather(local_result, root=0)
 if rank == 0:
     # Combine the gathered results
     combined_result = np.concatenate(gathered_results, axis=0)
-    combined_result = np.reshape(combined_result, (grid_size,grid_size,2))
+    combined_result = np.reshape(combined_result, (GRID_SIZE, GRID_SIZE,2))
     print(combined_result.shape)
 
     val_loss_result, accuracy_result = np.array_split(combined_result, 2, axis=-1)

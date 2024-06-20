@@ -63,26 +63,31 @@ class BasicCNN(nn.Module):
     '''
     a simple CNN archetechture
     '''
-    def __init__(self, num_classes: int, feature_size: int, dropout_prob: float):
+    def __init__(self, num_classes: int, in_channels: int,  out_feature_size: int, dropout_prob: float):
         super(BasicCNN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv2d(in_channels, 96, kernel_size=5, padding=2)
 
-        self.pool1 = nn.MaxPool2d(kernel_size=2, padding=1)
+        self.pool1 = nn.MaxPool2d(kernel_size=3,stride=2)
 
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(96, 128, kernel_size=5, padding=2)
 
-        self.pool2 = nn.MaxPool2d(kernel_size=2, padding=1)
+        self.pool2 = nn.MaxPool2d(kernel_size=3,stride=2)
 
-        #self.dropout = nn.Dropout(dropout_prob)
-        self.dropout = ConfusionDropout(dropout_prob, DropoutDataHandler())
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=5, padding=2)
 
-        self.fc1 = nn.Linear(2048, 1024)
-
-
-        self.fc2 = nn.Linear(1024, feature_size)
-        self.fc3 = nn.Linear(feature_size, num_classes)
+        self.pool3 = nn.MaxPool2d(kernel_size=3,stride=2)
 
         self.flatten = nn.Flatten()
+
+        self.fc1 = nn.Linear(2304, 2048)
+
+        self.fc2 = nn.Linear(2048, out_feature_size)
+
+        self.dropout_reg = nn.Dropout(dropout_prob)
+        self.dropout= ConfusionDropout(dropout_prob, DropoutDataHandler())
+
+        self.fc3 = nn.Linear(out_feature_size, num_classes)
+
         self.ReLU = nn.LeakyReLU(0.2)
         #self.softmax = nn.Softmax(dim=1)
 
@@ -103,18 +108,22 @@ class BasicCNN(nn.Module):
 
         x = self.pool2(x)
 
+        x = self.ReLU(self.conv3(x))
+
+        x = self.pool3(x)
+
         x = self.flatten(x)
 
         self.fc1.weight.data = self._max_norm(self.fc1.weight.data)
         x = self.ReLU(self.fc1(x))
 
-        #x = self.dropout(x)
+        #x = self.dropout_reg(x)
 
         self.fc2.weight.data = self._max_norm(self.fc2.weight.data)
         x = self.ReLU(self.fc2(x))
 
         x = self.dropout(x, y)
-        #x = self.dropout(x)
+        #x = self.dropout_reg(x)
 
         self.fc3.weight.data = self._max_norm(self.fc3.weight.data)
         x = self.fc3(x)
@@ -136,8 +145,7 @@ class ConfusionDropout(nn.Module):
         super().__init__()
 
         self.weight_matrix = torch.empty(0)
-        self.prev_output = None
-        self.engaged = True
+        self.prev_output = torch.empty(0)
 
         self.drop_percent = drop_percent
         self.drop_handeler = drop_handler
@@ -165,15 +173,16 @@ class ConfusionDropout(nn.Module):
 
         mask = torch.ones_like(x).bool()
 
-        # TODO: Check shape of mask and x - I think something like x[mask] should work without the loop!
+        # RESOLVEDTODO: Check shape of mask and x - I think something like x[mask] should work without the loop!
+        # I did try that but didnt get the correct results
         for batch_indx, _ in enumerate(mask):
             mask[batch_indx][dropped_channels[batch_indx]] = False
 
         if y is not None:
-            self.drop_handeler.store_forwardpass(y.detach().to('cpu'),
-                                                 mask.detach().to('cpu'),
-                                                 top_ind.detach().to('cpu'),
-                                                 selected_weight_diffs.detach().to('cpu'))
+            self.drop_handeler.store_forwardpass(y.to('cpu').detach(),
+                                                 mask.to('cpu').detach(),
+                                                 top_ind.to('cpu').detach(),
+                                                 scores.to('cpu').detach())
 
         return mask
 
@@ -195,8 +204,16 @@ class DropoutDataHandler():
     for collecting info in our special dropout
     '''
     def __init__(self):
-        self.batch_info = None
-        self.epoch_info = None
+        self.batch_info = {}
+        self.epoch_info = {}
+    
+    def __str__(self) -> str:
+        shapes = "DropoutDataHandler:\n"
+        if self.epoch_info:
+            for key, value in self.epoch_info.items():
+                shapes += f'{key}: {value.shape}\n'
+
+        return shapes
 
 
     def store_forwardpass(self, y, mask, top_ind, selected_weight_diffs):
@@ -209,7 +226,8 @@ class DropoutDataHandler():
         dropped_channels = torch.unsqueeze(mask, dim=0)
         top_ind = torch.unsqueeze(top_ind, dim=0)
         selected_weight_diffs = torch.unsqueeze(selected_weight_diffs, dim=0)
-        if self.batch_info is None: # if this is the first batch
+
+        if not self.batch_info: # if this is the first batch
             self.batch_info = {"labels": y,
                          "dropped_channels": dropped_channels, 
                          "selected_weight_indexs": top_ind, 
@@ -229,13 +247,13 @@ class DropoutDataHandler():
         '''
         stack data from this epoch
         '''
-        if self.epoch_info is None:
+        if not self.epoch_info:
             self.epoch_info = self.batch_info.copy()
         else:
             for item in self.batch_info:
-                self.epoch_info[item] = torch.vstack((self.epoch_info[item], self.batch_info[item]))            
+                self.epoch_info[item] = torch.vstack((self.epoch_info[item], self.batch_info[item]))
 
-        self.batch_info = None
+        self.batch_info = {}
 
 
     def seperate_batch_info(self, drop_info_epochs):
@@ -264,14 +282,12 @@ class DropoutDataHandler():
         '''
         retrieves the data of a specific epoch
         '''
-        print(self.epoch_info["dropped_channels"].shape)
+        print(self)
         label_indices = torch.nonzero((self.epoch_info["labels"][epoch] == label), as_tuple=True)[0]
 
-        print(label_indices.shape)
 
         selected_per_label = self.epoch_info[inquiry][epoch][label_indices, :]
 
-        print(selected_per_label.shape)
 
 
         return selected_per_label

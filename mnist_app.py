@@ -10,35 +10,38 @@ import plotly.express as px
 import numpy as np
 import torch
 
-
 from model_architectures import BasicCNN
-import mnist_utils
+import model_utils
+from datasets import loadData
+
 
 class MnistApp():
     """
     if
         
     """
-    def __init__(self, load_path: str | None, train_loss = None, val_loss= None):
+    def __init__(self, train_loss = None, val_loss= None):
 
         self.app = Dash(__name__)
 
         self.model = BasicCNN(num_classes=10,
-                              feature_size=512,
+                              in_channels=3,
+                              out_feature_size=2048,
                               dropout_prob=0.5)
-        self.num_epochs = 2
-
-        if load_path is None:
-            self.train_loss, self.val_loss, self.model = mnist_utils.train_fas_mnist(model=self.model,
-                                                                        num_epochs=self.num_epochs,
-                                                                        save=True, save_mode= 'accuracy')
-        else:
-            self.model.load_state_dict(torch.load(load_path))
-            self.train_loss = train_loss
-            self.val_loss = val_loss
+        self.num_epochs = 40
+        self.train_loader, self.val_loader, self.test_loader = loadData('CIFAR-10',batch_size= 200)
 
 
-        self.label_acc, self.total = mnist_utils.test_fas_mnist(self.model)
+        self.train_loss, self.val_loss, self.model = model_utils.train_fas_mnist(model=self.model,
+                                                                                train_loader=self.train_loader,
+                                                                                val_loader=self.val_loader,
+                                                                                test_loader=self.test_loader,
+                                                                                num_epochs=self.num_epochs,
+                                                                                save=True,
+                                                                                save_mode='accuracy')
+
+
+        self.test_loss, self.test_acc, self.label_acc = model_utils.test_fas_mnist(self.model, test_loader=self.test_loader)
         self.label_acc = np.array(self.label_acc)
 
 
@@ -100,6 +103,7 @@ class MnistApp():
             fig  = px.bar(x=self.label_acc,
                            y=y,
                            color=self.label_acc,
+                           range_color= [0.0, 1.0],
                            orientation='h',
                            color_continuous_scale = 'sunsetdark')
 
@@ -192,5 +196,30 @@ class MnistApp():
         '''
         self.app.run(debug=False)
 
-vis = MnistApp(load_path=None)
+def model_grid_heatmap(accuracy_path, losses_path, drops_path, features_path ):
+    accuracys = np.loadtxt(fname= accuracy_path, delimiter= ',')
+    losses = np.loadtxt(fname= losses_path, delimiter= ',')
+
+    drops = np.loadtxt(fname= drops_path, delimiter= ',')
+    features = np.loadtxt(fname= features_path, delimiter= ',')
+
+    accuracy_map = px.imshow(img=accuracys,
+                             labels=dict(x="Drop Percent", y="Number of Features", color="Accuracy"),
+                             x= drops[0].astype(str),
+                             y= features[:, 0].astype(str),
+                             text_auto=True,
+                             color_continuous_scale= 'BuGn',
+                             #color_continuous_midpoint= 0.9,
+                             range_color=[0.85,0.95],
+                            title='Model Grid Combinations: Accuracy',
+                            aspect="auto")
+
+    accuracy_map.show()
+
+vis = MnistApp()
 vis.run()
+
+# model_grid_heatmap('acc_result.csv',
+#                    'val_result.csv',
+#                    'drop.csv',
+#                    'feature.csv')
