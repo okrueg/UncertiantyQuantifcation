@@ -63,7 +63,7 @@ class BasicCNN(nn.Module):
     '''
     a simple CNN archetechture
     '''
-    def __init__(self, num_classes: int, in_channels: int,  out_feature_size: int, use_reg_dropout: bool, dropout_prob: float):
+    def __init__(self, num_classes: int, in_channels: int,  out_feature_size: int, use_reg_dropout: bool, dropout_prob: float, drop_certainty: float):
         super(BasicCNN, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, 96, kernel_size=5, padding=2)
 
@@ -85,8 +85,10 @@ class BasicCNN(nn.Module):
 
         if use_reg_dropout:
             self.dropout = nn.Dropout(dropout_prob)
+            print("regular")
         else:
-            self.dropout= ConfusionDropout(dropout_prob, DropoutDataHandler())
+            self.dropout= ConfusionDropout(dropout_prob, drop_certainty, DropoutDataHandler())
+            print("special")
 
         self.fc3 = nn.Linear(out_feature_size, num_classes)
 
@@ -144,7 +146,7 @@ class ConfusionDropout(nn.Module):
     '''
     A special form of dropout to challenge the model by causing class confusion
     '''
-    def __init__(self, drop_percent, drop_handler = None):
+    def __init__(self, drop_percent: float, drop_certianty: float, drop_handler = None):
       
         super().__init__()
 
@@ -152,6 +154,7 @@ class ConfusionDropout(nn.Module):
         self.prev_output = torch.empty(0)
 
         self.drop_percent = drop_percent
+        self.drop_certianty = drop_certianty
         self.drop_handeler = drop_handler
 
     def get_mask(self, x, y = None):
@@ -175,12 +178,18 @@ class ConfusionDropout(nn.Module):
         #select num_dropped num channels with the highest score 
         dropped_channels = torch.topk(scores, k=num_dropped, dim=1, largest=True)[1]
 
+        # shuffle dropped_channels
+        # shuffle_idx = torch.randperm(dropped_channels.size(-1))
+        # dropped_channels = dropped_channels[:, shuffle_idx]
+        # print(dropped_channels.shape)
+
         mask = torch.ones_like(x).bool()
 
-        # RESOLVEDTODO: Check shape of mask and x - I think something like x[mask] should work without the loop!
-        # I did try that but didnt get the correct results
-        for batch_indx, _ in enumerate(mask):
-            mask[batch_indx][dropped_channels[batch_indx]] = False
+        certianty_mask = torch.rand((mask.shape[0], num_dropped), device=mask.device) > self.drop_certianty
+
+        batch_indices = torch.arange(mask.shape[0]).unsqueeze(1).repeat(1, num_dropped)
+
+        mask[batch_indices, dropped_channels] = certianty_mask
 
         if y is not None:
             self.drop_handeler.store_forwardpass(y.to('cpu').detach(),
@@ -200,7 +209,7 @@ class ConfusionDropout(nn.Module):
                 mask = self.get_mask(x, y)
                 x = x * mask
         else:
-            x = x * (1 - self.drop_percent) # keep expected value
+            x = x * (1 - (self.drop_percent * self.drop_certianty)) # keep expected value
         return x
 
 class DropoutDataHandler():

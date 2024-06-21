@@ -255,7 +255,8 @@ def model_grid_training(model_params: np.ndarray,
         'in_channels': 3,
         'out_feature_size': 2048,
         'use_reg_dropout': False,
-        'dropout_prob': 0.5
+        'dropout_prob': 0.5,
+        'drop_certainty': 0.95
     }
 
     def encompassed(params):
@@ -264,7 +265,6 @@ def model_grid_training(model_params: np.ndarray,
         model_options[model_changes[1]] = params[1]
 
         print(model_options)
-
 
         verboscity = False
         if rank == 0:
@@ -283,6 +283,8 @@ def model_grid_training(model_params: np.ndarray,
         min_val_loss= min(min_val_loss)
 
         test_loss, test_acc, _ = test_fas_mnist(model=best_model,test_loader=test_loader, verbose=verboscity)
+
+        print(f'{rank} finished {params}')
 
         return [min_val_loss, test_acc]
 

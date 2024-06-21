@@ -28,8 +28,9 @@ class MnistApp():
                               in_channels=3,
                               out_feature_size=2048,
                               use_reg_dropout=False,
-                              dropout_prob=0.5)
-        self.num_epochs = 40
+                              dropout_prob=0.5,
+                              drop_certainty=0.95)
+        self.num_epochs = 6
         self.train_loader, self.val_loader, self.test_loader = loadData('CIFAR-10',batch_size= 200)
 
 
