@@ -63,7 +63,7 @@ class BasicCNN(nn.Module):
     '''
     a simple CNN archetechture
     '''
-    def __init__(self, num_classes: int, in_channels: int,  out_feature_size: int, dropout_prob: float):
+    def __init__(self, num_classes: int, in_channels: int,  out_feature_size: int, use_reg_dropout: bool, dropout_prob: float):
         super(BasicCNN, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, 96, kernel_size=5, padding=2)
 
@@ -83,8 +83,10 @@ class BasicCNN(nn.Module):
 
         self.fc2 = nn.Linear(2048, out_feature_size)
 
-        self.dropout_reg = nn.Dropout(dropout_prob)
-        self.dropout= ConfusionDropout(dropout_prob, DropoutDataHandler())
+        if use_reg_dropout:
+            self.dropout = nn.Dropout(dropout_prob)
+        else:
+            self.dropout= ConfusionDropout(dropout_prob, DropoutDataHandler())
 
         self.fc3 = nn.Linear(out_feature_size, num_classes)
 
@@ -122,8 +124,10 @@ class BasicCNN(nn.Module):
         self.fc2.weight.data = self._max_norm(self.fc2.weight.data)
         x = self.ReLU(self.fc2(x))
 
-        x = self.dropout(x, y)
-        #x = self.dropout_reg(x)
+        if isinstance(self.dropout, ConfusionDropout):
+            x = self.dropout(x, y)
+        else:
+            x = self.dropout(x)
 
         self.fc3.weight.data = self._max_norm(self.fc3.weight.data)
         x = self.fc3(x)

@@ -27,6 +27,7 @@ class MnistApp():
         self.model = BasicCNN(num_classes=10,
                               in_channels=3,
                               out_feature_size=2048,
+                              use_reg_dropout=False,
                               dropout_prob=0.5)
         self.num_epochs = 40
         self.train_loader, self.val_loader, self.test_loader = loadData('CIFAR-10',batch_size= 200)
@@ -210,7 +211,7 @@ def model_grid_heatmap(accuracy_path, losses_path, drops_path, features_path ):
                              text_auto=True,
                              color_continuous_scale= 'BuGn',
                              #color_continuous_midpoint= 0.9,
-                             range_color=[0.85,0.95],
+                             #range_color=[0.85,0.95],
                             title='Model Grid Combinations: Accuracy',
                             aspect="auto")
 

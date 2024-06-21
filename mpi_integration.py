@@ -31,20 +31,22 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-GRID_SIZE = 5
+X_SIZE = 2
+Y_SIZE = 3
 EPOCHS = 25
+train, val, test = model_utils.loadData('CIFAR-10', batch_size=200)
 
 if rank == 0:
-    data = model_utils.model_grid_generator(drop_prob_range=(0, 0.75), feature_size_range=(10, 512), num=GRID_SIZE)
+    data = model_utils.model_grid_generator( x_range=(0, 1), y_range=(0, 0.75), grid_size=(X_SIZE, Y_SIZE))
     print(f'data shape: {data.shape}')
 
-    if size > data.shape[0]:
+    # if size > data.shape[0]:
 
-        final_chunks = dual_split(size, data)
+    #     final_chunks = dual_split(size, data)
 
-    else:
+    # else:
 
-        final_chunks = np.array_split(data, size, axis=0)
+    final_chunks = np.array_split(data, size, axis=0)
 
     print("The split is")
     for i in final_chunks:
@@ -56,7 +58,7 @@ else:
 local_chunk = comm.scatter(final_chunks, root=0)
 
 
-local_result = model_utils.model_grid_training(local_chunk, EPOCHS, rank)
+local_result = model_utils.model_grid_training(local_chunk,('use_reg_dropout', 'dropout_prob'), train, val, test, EPOCHS, rank)
 
 
 gathered_results = comm.gather(local_result, root=0)
@@ -65,7 +67,7 @@ gathered_results = comm.gather(local_result, root=0)
 if rank == 0:
     # Combine the gathered results
     combined_result = np.concatenate(gathered_results, axis=0)
-    combined_result = np.reshape(combined_result, (GRID_SIZE, GRID_SIZE,2))
+    #combined_result = np.reshape(combined_result, (GRID_SIZE, GRID_SIZE,2))
     print(combined_result.shape)
 
     val_loss_result, accuracy_result = np.array_split(combined_result, 2, axis=-1)

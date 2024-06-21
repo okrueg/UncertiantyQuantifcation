@@ -92,7 +92,8 @@ def train_fas_mnist(model: BasicCNN,
             acc = torch.eq(y, predictions).int()
 
             train_total_acc[batch_idx] = torch.mean(acc, dtype= torch.float)
-            u = torch.nn.functional.log_softmax(train_output.to('cpu').detach())
+
+            u = torch.nn.functional.log_softmax(train_output.to('cpu').detach(), dim=-1)
             train_output_scalar[batch_idx] = torch.sum(abs(u), dim=1)[1]
 
         if hasattr(model.dropout, "drop_handeler"):
@@ -208,38 +209,39 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, verbose = True):
 
     return overall_test_loss, total_acc, label_acc
 
-def model_grid_generator(drop_prob_range: tuple, feature_size_range: tuple, num: int):
+def model_grid_generator(x_range: tuple, y_range: tuple, grid_size: tuple):
     '''
     Generates a mesh grid of model param combinations
     '''
-    drop_prob_range = np.linspace(start=drop_prob_range[0],
-                        stop=drop_prob_range[1],
-                        num=num)
+    x_range = np.linspace(start=x_range[0],
+                        stop=x_range[1],
+                        num=grid_size[0])
 
-    feature_size_range = np.linspace(start=feature_size_range[0],
-                            stop=feature_size_range[1],
-                            num=num)
+    y_range = np.linspace(start=y_range[0],
+                            stop=y_range[1],
+                            num=grid_size[1])
 
-    x, y = np.meshgrid(drop_prob_range, feature_size_range, indexing='xy')
+    x, y = np.meshgrid(x_range, y_range, indexing='xy')
 
     stacked_data = np.stack((x, y), axis=-1)
 
-    drop, feature = np.array_split(stacked_data, 2, axis=-1)
+    x, y = np.array_split(stacked_data, 2, axis=-1)
 
-    drop = drop.squeeze()
-    feature = feature.squeeze()
+    x = x.squeeze()
+    y = y.squeeze()
 
 
-    print(f"Drop results:\n{drop.shape}")
-    print(f"feature result:\n{feature.shape}")
+    print(f"x results:\n{x.shape}")
+    print(f"y result:\n{y.shape}")
 
-    np.savetxt("drop.csv", drop, fmt='%.5f', delimiter=', ', header='drop')
-    np.savetxt("feature.csv", feature, fmt='%.5f', delimiter=', ', header='Feature')
+    np.savetxt("x.csv", x, fmt='%.5f', delimiter=', ', header='x')
+    np.savetxt("y.csv", y, fmt='%.5f', delimiter=', ', header='y')
 
     return stacked_data
 
 
 def model_grid_training(model_params: np.ndarray,
+                        model_changes: tuple,
                         train_loader: DataLoader,
                         val_loader: DataLoader,
                         test_loader: DataLoader,
@@ -247,16 +249,28 @@ def model_grid_training(model_params: np.ndarray,
     '''
     Given a chunk of model parameters, this will train the model on each chunk
     '''
+    
+    model_options = {
+        'num_classes': 10,
+        'in_channels': 3,
+        'out_feature_size': 2048,
+        'use_reg_dropout': False,
+        'dropout_prob': 0.5
+    }
 
-    def encompassed(model_args: np.ndarray):
+    def encompassed(params):
+
+        model_options[model_changes[0]] = params[0]
+        model_options[model_changes[1]] = params[1]
+
+        print(model_options)
+
+
         verboscity = False
         if rank == 0:
-            print(model_args[0], model_args[1])
             verboscity = True
 
-        model = BasicCNN(num_classes=10,
-                         out_feature_size=int(model_args[1]),
-                         dropout_prob=model_args[0])
+        model = BasicCNN(**model_options)
         _, min_val_loss, best_model = train_fas_mnist(model=model,
                                                       train_loader=train_loader,
                                                       val_loader=val_loader,
