@@ -63,7 +63,8 @@ class BasicCNN(nn.Module):
     '''
     a simple CNN archetechture
     '''
-    def __init__(self, num_classes: int, in_channels: int,  out_feature_size: int, use_reg_dropout: bool, dropout_prob: float, drop_certainty: float):
+    def __init__(self, num_classes: int, in_channels: int,  out_feature_size: int,
+                 use_reg_dropout: bool, dropout_prob: float, num_drop_channels: int,  drop_certainty: float):
         super(BasicCNN, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, 96, kernel_size=5, padding=2)
 
@@ -87,7 +88,7 @@ class BasicCNN(nn.Module):
             self.dropout = nn.Dropout(dropout_prob)
             print("regular")
         else:
-            self.dropout= ConfusionDropout(dropout_prob, drop_certainty, DropoutDataHandler())
+            self.dropout= ConfusionDropout(dropout_prob, num_drop_channels, drop_certainty, DropoutDataHandler())
             print("special")
 
         self.fc3 = nn.Linear(out_feature_size, num_classes)
@@ -146,7 +147,7 @@ class ConfusionDropout(nn.Module):
     '''
     A special form of dropout to challenge the model by causing class confusion
     '''
-    def __init__(self, drop_percent: float, drop_certianty: float, drop_handler = None):
+    def __init__(self, drop_percent: float, num_top_channels: int, drop_certianty: float, drop_handler = None):
       
         super().__init__()
 
@@ -154,6 +155,7 @@ class ConfusionDropout(nn.Module):
         self.prev_output = torch.empty(0)
 
         self.drop_percent = drop_percent
+        self.num_top_channels = num_top_channels
         self.drop_certianty = drop_certianty
         self.drop_handeler = drop_handler
 
@@ -162,7 +164,7 @@ class ConfusionDropout(nn.Module):
         retrieves mask for doc string
         '''
         #retrieve the indicies of the 2 highest model predictions
-        top_ind = torch.topk(self.prev_output, k=2, dim=1)[1]
+        top_ind = torch.topk(self.prev_output, k= self.num_top_channels, dim=1)[1]
 
         #select the weights associated with those model predictions
         selected_weight_cols = self.weight_matrix[top_ind] #Shape: batch, 2, feature size
@@ -185,7 +187,9 @@ class ConfusionDropout(nn.Module):
 
         mask = torch.ones_like(x).bool()
 
-        certianty_mask = torch.rand((mask.shape[0], num_dropped), device=mask.device) > self.drop_certianty
+        # values above certianty set to false IE with certainty of 1.0 this is the same as = False
+        certianty_mask = torch.rand((mask.shape[0], num_dropped), device=mask.device) > self.drop_certianty\
+        
 
         batch_indices = torch.arange(mask.shape[0]).unsqueeze(1).repeat(1, num_dropped)
 

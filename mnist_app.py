@@ -28,22 +28,22 @@ class MnistApp():
                               in_channels=3,
                               out_feature_size=2048,
                               use_reg_dropout=False,
-                              dropout_prob=0.5,
+                              dropout_prob=0.75,
                               drop_certainty=0.95)
-        self.num_epochs = 6
+        self.num_epochs = 25
         self.train_loader, self.val_loader, self.test_loader = loadData('CIFAR-10',batch_size= 200)
 
 
-        self.train_loss, self.val_loss, self.model = model_utils.train_fas_mnist(model=self.model,
-                                                                                train_loader=self.train_loader,
-                                                                                val_loader=self.val_loader,
-                                                                                test_loader=self.test_loader,
-                                                                                num_epochs=self.num_epochs,
-                                                                                save=True,
-                                                                                save_mode='accuracy')
+        (self.train_loss, self.val_loss),(self.train_acc, self.test_acc), self.model = model_utils.train_fas_mnist(model=self.model,
+                                                                                                                    train_loader=self.train_loader,
+                                                                                                                    val_loader=self.val_loader,
+                                                                                                                    test_loader=self.test_loader,
+                                                                                                                    num_epochs=self.num_epochs,
+                                                                                                                    save=True,
+                                                                                                                    save_mode='accuracy')
 
 
-        self.test_loss, self.test_acc, self.label_acc = model_utils.test_fas_mnist(self.model, test_loader=self.test_loader)
+        self.final_loss, self.final_acc, self.label_acc = model_utils.test_fas_mnist(self.model, test_loader=self.test_loader)
         self.label_acc = np.array(self.label_acc)
 
 
@@ -79,7 +79,12 @@ class MnistApp():
         #----Graphs about model training -----
         self.graph_container = html.Div([
             dcc.Graph(id="label_acc"),
-            dcc.Graph(id="training_stats")
+            dcc.Graph(id="training_losses")
+        ], style={'display': 'flex'})
+
+        self.acc_graphs = html.Div([
+            dcc.Graph(id="accuracys"),
+            #dcc.Graph(id="t")
         ], style={'display': 'flex'})
 
         self.dropout_graphs = html.Div([
@@ -89,6 +94,7 @@ class MnistApp():
 
         # Throw HTML elements into app
         self.app.layout = html.Div([self.graph_container,
+                                    self.acc_graphs,
                                     self.dropout_graphs,
                                     self.epoch_slider,
                                     self.buttons])
@@ -124,7 +130,7 @@ class MnistApp():
             )
             return fig
 
-        @self.app.callback(Output("training_stats", "figure"),
+        @self.app.callback(Output("training_losses", "figure"),
                            Input('corr', 'n_clicks')) # output graph is what us updated
         def update_train(corr):
             x = np.arange(self.num_epochs)
@@ -141,6 +147,26 @@ class MnistApp():
                         )
 
             return fig
+
+
+        @self.app.callback(Output("accuracys", "figure"),
+                    Input('corr', 'n_clicks')) # output graph is what us updated
+        def update_accuracys(corr):
+            x = np.arange(self.num_epochs)
+            fig = px.line(x,y=self.test_acc, range_y=[0,1])
+            fig.add_scatter(x=x, y= self.train_acc, mode='lines')
+
+            fig.update_layout(
+                        showlegend=False,
+                        autosize=False,
+                        width=900,
+                        height=500,
+                        xaxis_title="Epoch",
+                        yaxis_title="Accuracy"
+                        )
+
+            return fig
+
 
         @self.app.callback(Output("dropped_channels", "figure"),
                            Output("confused_labels", "figure"),

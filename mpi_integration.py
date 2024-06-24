@@ -34,7 +34,7 @@ size = comm.Get_size()
 #if sizes are different, make sure x is the smaller one
 X_SIZE = 2
 Y_SIZE = 4
-EPOCHS = 25
+EPOCHS = 1
 train, val, test = model_utils.loadData('CIFAR-10', batch_size=200)
 
 if rank == 0:

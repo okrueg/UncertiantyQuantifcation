@@ -18,7 +18,7 @@ def train_fas_mnist(model: BasicCNN,
                     val_loader: DataLoader,
                     test_loader: DataLoader,
                     num_epochs: int,
-                    lr = 0.01,
+                    lr = 0.015,
                     save = False,
                     save_mode = 'loss',
                     verbose = True):
@@ -31,7 +31,7 @@ def train_fas_mnist(model: BasicCNN,
     loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
     optimizer = SGD(model.parameters(), lr=lr, momentum= 0.95) # , nesterov= True
     #scheduler = ExponentialLR(optimizer,0.90)
-    scheduler = StepLR(optimizer, step_size=5, gamma=0.9)
+    scheduler = StepLR(optimizer, step_size=2, gamma=0.9)
 
     best_val_loss = np.inf
     best_test_acc = -1 * np.inf
@@ -39,6 +39,9 @@ def train_fas_mnist(model: BasicCNN,
     best_model = deepcopy(model)
     train_losses = []
     val_losses = []
+
+    train_accs = []
+    test_accs = []
 
     #-----Train ----
     for epoch in range(num_epochs):
@@ -116,11 +119,20 @@ def train_fas_mnist(model: BasicCNN,
 
                 val_total_acc[batch_idx] = torch.mean(acc, dtype= torch.float)
 
+        test_stats = test_fas_mnist(model=model,
+                            test_loader=test_loader,
+                            verbose=False)
+
+        test_loss, test_acc = test_stats[0], test_stats[1]
+
         overall_training_loss = overall_training_loss/len(train_loader)
         overall_val_loss = overall_val_loss/len(val_loader)
 
         train_total_acc = torch.mean(train_total_acc)
         val_total_acc = torch.mean(val_total_acc)
+
+        train_accs.append(train_total_acc.item())
+        test_accs.append(test_acc)
 
         train_losses.append(overall_training_loss)
         val_losses.append(overall_val_loss)
@@ -128,11 +140,7 @@ def train_fas_mnist(model: BasicCNN,
         train_output_scalar= torch.mean(train_output_scalar)
 
         scheduler.step()
-        test_stats = test_fas_mnist(model=model,
-                                    test_loader=test_loader,
-                                    verbose=False)
 
-        test_loss, test_acc = test_stats[0], test_stats[1]
         if verbose:
             print(f'Learning Rate: {scheduler.get_last_lr()[0]:.4f}')
             print(f'Train_output_scalar {train_output_scalar:.4f}')
@@ -165,7 +173,7 @@ def train_fas_mnist(model: BasicCNN,
 
 
             #torch.save(model.state_dict(), "model_best_val.path")
-    return train_losses, val_losses, best_model
+    return (train_losses, val_losses), (train_accs, test_accs), best_model
 
 def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, verbose = True):
     '''
@@ -256,7 +264,8 @@ def model_grid_training(model_params: np.ndarray,
         'out_feature_size': 2048,
         'use_reg_dropout': False,
         'dropout_prob': 0.5,
-        'drop_certainty': 0.95
+        'num_drop_channels': 2,
+        'drop_certainty': 1,
     }
 
     def encompassed(params):
@@ -271,7 +280,7 @@ def model_grid_training(model_params: np.ndarray,
             verboscity = True
 
         model = BasicCNN(**model_options)
-        _, min_val_loss, best_model = train_fas_mnist(model=model,
+        _, min_training_loss, best_model = train_fas_mnist(model=model,
                                                       train_loader=train_loader,
                                                       val_loader=val_loader,
                                                       test_loader= test_loader,
@@ -280,13 +289,14 @@ def model_grid_training(model_params: np.ndarray,
                                                       save_mode='accuracy',
                                                       verbose=verboscity)
 
-        min_val_loss= min(min_val_loss)
+        min_training_loss= min(min_training_loss[0])
 
         test_loss, test_acc, _ = test_fas_mnist(model=best_model,test_loader=test_loader, verbose=verboscity)
 
         print(f'{rank} finished {params}')
+        print(min_training_loss, test_acc)
 
-        return [min_val_loss, test_acc]
+        return np.array([min_training_loss, test_acc])
 
 
     test = np.apply_along_axis(encompassed, axis=-1, arr=model_params)
