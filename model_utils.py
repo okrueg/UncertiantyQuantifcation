@@ -273,11 +273,11 @@ def model_grid_training(model_params: np.ndarray,
         model_options[model_changes[0]] = params[0]
         model_options[model_changes[1]] = params[1]
 
-        print(model_options)
+        print(model_params, model_options)
 
         verboscity = False
-        if rank == 0:
-            verboscity = True
+        # if rank == 0:
+        #     verboscity = True
 
         model = BasicCNN(**model_options)
         _, min_training_loss, best_model = train_fas_mnist(model=model,
@@ -294,7 +294,6 @@ def model_grid_training(model_params: np.ndarray,
         test_loss, test_acc, _ = test_fas_mnist(model=best_model,test_loader=test_loader, verbose=verboscity)
 
         print(f'{rank} finished {params}')
-        print(min_training_loss, test_acc)
 
         return np.array([min_training_loss, test_acc])
 

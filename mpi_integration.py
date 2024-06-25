@@ -1,7 +1,7 @@
+from itertools import chain
 from mpi4py import MPI
 
 import numpy as np
-from itertools import chain
 import model_utils
 #mpiexec -n 8 python mpi_integration.py
 def dual_split(size, data):
@@ -32,13 +32,13 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 #if sizes are different, make sure x is the smaller one
-X_SIZE = 2
+X_SIZE = 4
 Y_SIZE = 4
-EPOCHS = 1
+EPOCHS = 25
 train, val, test = model_utils.loadData('CIFAR-10', batch_size=200)
 
 if rank == 0:
-    data = model_utils.model_grid_generator( x_range=(0, 1), y_range=(0, 0.75), grid_size=(X_SIZE, Y_SIZE))
+    data = model_utils.model_grid_generator( x_range=(0, 0.75), y_range=(2, 10), grid_size=(X_SIZE, Y_SIZE))
     print(f'data shape: {data.shape}')
 
     if size > data.shape[0]:
@@ -59,7 +59,7 @@ else:
 local_chunk = comm.scatter(final_chunks, root=0)
 
 
-local_result = model_utils.model_grid_training(local_chunk,('use_reg_dropout', 'dropout_prob'), train, val, test, EPOCHS, rank)
+local_result = model_utils.model_grid_training(local_chunk,('dropout_prob', 'num_drop_channels'), train, val, test, EPOCHS, rank)
 
 
 gathered_results = comm.gather(local_result, root=0)

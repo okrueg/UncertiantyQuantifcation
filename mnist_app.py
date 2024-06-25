@@ -28,9 +28,10 @@ class MnistApp():
                               in_channels=3,
                               out_feature_size=2048,
                               use_reg_dropout=False,
-                              dropout_prob=0.75,
-                              drop_certainty=0.95)
-        self.num_epochs = 25
+                              dropout_prob=0.5,
+                              num_drop_channels=2,
+                              drop_certainty=0.1)
+        self.num_epochs = 20
         self.train_loader, self.val_loader, self.test_loader = loadData('CIFAR-10',batch_size= 200)
 
 
@@ -232,7 +233,7 @@ def model_grid_heatmap(accuracy_path, losses_path, drops_path, features_path ):
     features = np.loadtxt(fname= features_path, delimiter= ',')
 
     accuracy_map = px.imshow(img=accuracys,
-                             labels=dict(x="Drop Percent", y="Number of Features", color="Accuracy"),
+                             labels=dict(x="Regular dropout?", y="Number of Features", color="Accuracy"),
                              x= drops[0].astype(str),
                              y= features[:, 0].astype(str),
                              text_auto=True,
@@ -249,5 +250,5 @@ vis.run()
 
 # model_grid_heatmap('acc_result.csv',
 #                    'val_result.csv',
-#                    'drop.csv',
-#                    'feature.csv')
+#                    'x.csv',
+#                    'y.csv')

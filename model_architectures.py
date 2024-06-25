@@ -86,10 +86,8 @@ class BasicCNN(nn.Module):
 
         if use_reg_dropout:
             self.dropout = nn.Dropout(dropout_prob)
-            print("regular")
         else:
-            self.dropout= ConfusionDropout(dropout_prob, num_drop_channels, drop_certainty, DropoutDataHandler())
-            print("special")
+            self.dropout= ConfusionDropout(dropout_prob, int(num_drop_channels), drop_certainty, DropoutDataHandler())
 
         self.fc3 = nn.Linear(out_feature_size, num_classes)
 
@@ -163,21 +161,34 @@ class ConfusionDropout(nn.Module):
         '''
         retrieves mask for doc string
         '''
+        
         #retrieve the indicies of the 2 highest model predictions
         top_ind = torch.topk(self.prev_output, k= self.num_top_channels, dim=1)[1]
 
         #select the weights associated with those model predictions
         selected_weight_cols = self.weight_matrix[top_ind] #Shape: batch, 2, feature size
 
-        selected_weight_diffs = selected_weight_cols[:, 0, :] - selected_weight_cols[:, 1, :] #Shape: batch, feature size
+        test = True
+        # method 1 distance to correct
+        if test:
+            selected_weight_diffs = selected_weight_cols - self.weight_matrix[y].unsqueeze(1) #Shape: batch, feature size
 
-        #weight * channel, Higher Score means higherdrop rate
-        scores = abs(x * selected_weight_diffs) #Shape: batch, feature
+            scores = abs(x.unsqueeze(1) * selected_weight_diffs) #Shape: batch, feature
+
+            scores = torch.mean(scores, dim=1)
+
+        else:
+
+            selected_weight_diffs = selected_weight_cols[:, 0, :] - selected_weight_cols[:, 1, :] #Shape: batch, feature size
+
+            #weight * channel, Higher Score means higherdrop rate
+            scores = abs(x * selected_weight_diffs)
+
 
         #Number of channels to drop
         num_dropped = int(x.shape[1] * self.drop_percent)
 
-        #select num_dropped num channels with the highest score 
+        #select num_dropped num channels with the highest score
         dropped_channels = torch.topk(scores, k=num_dropped, dim=1, largest=True)[1]
 
         # shuffle dropped_channels
@@ -188,7 +199,7 @@ class ConfusionDropout(nn.Module):
         mask = torch.ones_like(x).bool()
 
         # values above certianty set to false IE with certainty of 1.0 this is the same as = False
-        certianty_mask = torch.rand((mask.shape[0], num_dropped), device=mask.device) > self.drop_certianty\
+        certianty_mask = torch.rand((mask.shape[0], num_dropped), device=mask.device) > self.drop_certianty
         
 
         batch_indices = torch.arange(mask.shape[0]).unsqueeze(1).repeat(1, num_dropped)
