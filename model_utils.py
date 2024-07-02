@@ -1,4 +1,4 @@
-from copy import deepcopy
+from copy import copy, deepcopy
 
 import numpy as np
 import torch
@@ -13,11 +13,26 @@ from datasets import loadData
 from model_architectures import BasicCNN
 
 
+class ActivationLoss(torch.nn.CrossEntropyLoss):
+    def __init__(self, gamma: float, label_smoothing: float):
+        super(ActivationLoss, self).__init__(label_smoothing=label_smoothing)
+        
+        self.gamma = gamma
+    
+    def forward(self, input: torch.Tensor, target: torch.Tensor, activations: torch.Tensor) -> torch.Tensor:
+
+        #activation_norm = torch.sqrt(torch.sum(torch.square(activations)))
+        activation_norm = torch.norm(activations, p=2)
+        #print(activation_norm)
+
+        return super().forward(input, target) + self.gamma * activation_norm
+
 def train_fas_mnist(model: BasicCNN,
                     train_loader: DataLoader,
                     val_loader: DataLoader,
                     test_loader: DataLoader,
                     num_epochs: int,
+                    activation_gamma: float,
                     lr = 0.015,
                     save = False,
                     save_mode = 'loss',
@@ -28,10 +43,12 @@ def train_fas_mnist(model: BasicCNN,
     print(f'Used Device: {DEVICE}') if verbose else None
     model.to(DEVICE)
 
-    loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
-    optimizer = SGD(model.parameters(), lr=lr, momentum= 0.95) # , nesterov= True
+    #loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
+    loss_fn = ActivationLoss(gamma=activation_gamma, label_smoothing=0.1)
+
+    optimizer = SGD(model.parameters(), lr=lr, momentum= 0.95)#, weight_decay= 0.001) # , nesterov= True
     #scheduler = ExponentialLR(optimizer,0.90)
-    scheduler = StepLR(optimizer, step_size=2, gamma=0.9)
+    scheduler = StepLR(optimizer, step_size=5, gamma=0.9)
 
     best_val_loss = np.inf
     best_test_acc = -1 * np.inf
@@ -63,6 +80,7 @@ def train_fas_mnist(model: BasicCNN,
                                            desc=f'Epoch [{epoch+1}/{num_epochs}]: ',
                                            colour= 'green',
                                            disable= not verbose):
+
             x = x.to(DEVICE)
             y = y.to(DEVICE)
             
@@ -71,22 +89,36 @@ def train_fas_mnist(model: BasicCNN,
             if hasattr(model.dropout, "weight_matrix"):
                 with torch.no_grad():
                     model.eval()
-                    first_output = model(x)
+                    first_output, _ = model(x)
 
                 model.dropout.weight_matrix = model.fc3.weight
                 model.dropout.prev_output = first_output
 
+                # BUG Test
+                #print((model.dropout.weight_matrix).var(dim=0).shape, model.dropout.weight_matrix.shape )
+
             model.train()
 
-            train_output = model(x,y)
+            train_output, activations = model(x,y)
 
-            loss = loss_fn(train_output, y)
+            loss = loss_fn(train_output, y, activations)
 
             overall_training_loss += loss.item()
 
             loss.backward()
+            
+            # min_grad = float('inf')
+            # max_grad = float('-inf')
 
-            nn.utils.clip_grad_value_(model.parameters(), clip_value=0.1)
+            # for param in model.parameters():
+            #     if param.grad is not None:
+            #         min_grad = min(min_grad, param.grad.min().item())
+            #         max_grad = max(max_grad, param.grad.max().item())
+
+            # print(f'Smallest gradient: {min_grad}')
+            # print(f'Largest gradient: {max_grad}')
+
+            nn.utils.clip_grad_value_(model.parameters(), clip_value=0.5)
 
             optimizer.step()
 
@@ -99,7 +131,14 @@ def train_fas_mnist(model: BasicCNN,
             u = torch.nn.functional.log_softmax(train_output.to('cpu').detach(), dim=-1)
             train_output_scalar[batch_idx] = torch.sum(abs(u), dim=1)[1]
 
-        if hasattr(model.dropout, "drop_handeler"):
+
+
+        if hasattr(model.dropout, "drop_handeler") and model.dropout.drop_handeler is not None:
+
+            # BUG TESTING
+            count_tensor = (model.dropout.drop_handeler.batch_info["selected_weight_indexs"] == model.dropout.drop_handeler.batch_info["labels"].unsqueeze(2)).sum(dim=2)
+            print("Epoch mean: ", torch.mean(count_tensor.to(torch.float), dim=1)) if verbose else None
+
             #print(model.dropout.drop_handeler)
             model.dropout.drop_handeler.add_epoch()
 
@@ -110,8 +149,8 @@ def train_fas_mnist(model: BasicCNN,
                 x = x.to(DEVICE)
                 y = y.to(DEVICE)
 
-                val_output = model(x)
-                overall_val_loss += loss_fn(val_output, y).item()
+                val_output, val_activations = model(x)
+                overall_val_loss += loss_fn(val_output, y, val_activations).item()
 
                 #---- Calculate train accuracys for the Batch ----
                 predictions = torch.max(val_output, dim=1)[1]
@@ -159,7 +198,7 @@ def train_fas_mnist(model: BasicCNN,
 
                     best_val_loss = overall_val_loss
 
-                    best_model  = deepcopy(model)
+                    best_model  = copy(model)
 
             elif save_mode == 'accuracy':
                 if test_acc > best_test_acc:
@@ -167,11 +206,12 @@ def train_fas_mnist(model: BasicCNN,
 
                     best_test_acc = test_acc
 
-                    best_model  = deepcopy(model)
+                    #best_model  = deepcopy(model)
+                    best_model  = copy(model)
             else:
                 raise ValueError(f"Invalid save mode: {save_mode}")
 
-
+            torch.save(best_model, f'model_{num_epochs}_{model.use_reg_dropout}.path')
             #torch.save(model.state_dict(), "model_best_val.path")
     return (train_losses, val_losses), (train_accs, test_accs), best_model
 
@@ -189,7 +229,13 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, verbose = True):
             x = x.to(DEVICE)
             y = y.to(DEVICE)
 
-            test_output = model(x)
+            test_output, _ = model(x)
+
+
+            #----BUG TEST-----
+            #print('output',torch.softmax(test_output, dim=1)[0:2])
+
+
             overall_test_loss += loss_fn(test_output, y).item()
 
             #---- Calculate accuracys for the Batch ----
@@ -262,29 +308,35 @@ def model_grid_training(model_params: np.ndarray,
         'num_classes': 10,
         'in_channels': 3,
         'out_feature_size': 2048,
+    }
+    dropout_options = {
         'use_reg_dropout': False,
+        'use_activations': False,
+        'original_method': False,
         'dropout_prob': 0.5,
-        'num_drop_channels': 2,
+        'num_drop_channels': 3,
         'drop_certainty': 1,
     }
 
     def encompassed(params):
 
-        model_options[model_changes[0]] = params[0]
-        model_options[model_changes[1]] = params[1]
-
-        print(model_params, model_options)
+        dropout_options[model_changes[0]] = params[0]
+        dropout_options[model_changes[1]] = params[1]
 
         verboscity = False
         # if rank == 0:
         #     verboscity = True
 
         model = BasicCNN(**model_options)
+
+        model.init_dropout(**dropout_options)
+
         _, min_training_loss, best_model = train_fas_mnist(model=model,
                                                       train_loader=train_loader,
                                                       val_loader=val_loader,
                                                       test_loader= test_loader,
                                                       num_epochs=num_epochs,
+                                                      activation_gamma= 0.001,
                                                       save=True,
                                                       save_mode='accuracy',
                                                       verbose=verboscity)

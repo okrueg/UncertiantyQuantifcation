@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from sklearn.preprocessing import MinMaxScaler
+from datasets import sparse2coarse
 
 class BasicNN(nn.Module):
     '''
@@ -63,8 +64,7 @@ class BasicCNN(nn.Module):
     '''
     a simple CNN archetechture
     '''
-    def __init__(self, num_classes: int, in_channels: int,  out_feature_size: int,
-                 use_reg_dropout: bool, dropout_prob: float, num_drop_channels: int,  drop_certainty: float):
+    def __init__(self, num_classes: int, in_channels: int,  out_feature_size: int):
         super(BasicCNN, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, 96, kernel_size=5, padding=2)
 
@@ -80,14 +80,9 @@ class BasicCNN(nn.Module):
 
         self.flatten = nn.Flatten()
 
-        self.fc1 = nn.Linear(2304, 2048)
+        self.fc1 = nn.Linear(2304, 1024)
 
-        self.fc2 = nn.Linear(2048, out_feature_size)
-
-        if use_reg_dropout:
-            self.dropout = nn.Dropout(dropout_prob)
-        else:
-            self.dropout= ConfusionDropout(dropout_prob, int(num_drop_channels), drop_certainty, DropoutDataHandler())
+        self.fc2 = nn.Linear(1024, out_feature_size)
 
         self.fc3 = nn.Linear(out_feature_size, num_classes)
 
@@ -97,11 +92,25 @@ class BasicCNN(nn.Module):
         self._max_norm_val = 3
         self._eps = 1e-8
 
+    def init_dropout(self, use_reg_dropout: bool, use_activations: bool, original_method: bool,
+                      dropout_prob: float, num_drop_channels: int,  drop_certainty: float):
+        
+        self.use_reg_dropout = use_reg_dropout
+
+        if use_reg_dropout:
+            self.dropout = nn.Dropout(dropout_prob)
+
+        else:
+            self.dropout= ConfusionDropout(use_activations, original_method, dropout_prob, int(num_drop_channels), drop_certainty)#, DropoutDataHandler())
+            #self.dropout = SuperLabelDropout(dropout_prob, int(num_drop_channels))
+
+
     def forward(self, x: torch.Tensor, y=None):
         '''
         forwards through model
         '''
         assert x.isnan().any().item() is False
+        assert self.dropout is not None
 
         x = self.ReLU(self.conv1(x))
 
@@ -125,6 +134,8 @@ class BasicCNN(nn.Module):
         self.fc2.weight.data = self._max_norm(self.fc2.weight.data)
         x = self.ReLU(self.fc2(x))
 
+        activations = x
+
         if isinstance(self.dropout, ConfusionDropout):
             x = self.dropout(x, y)
         else:
@@ -133,7 +144,7 @@ class BasicCNN(nn.Module):
         self.fc3.weight.data = self._max_norm(self.fc3.weight.data)
         x = self.fc3(x)
 
-        return x
+        return x, activations
 
     #https://github.com/kevinzakka/pytorch-goodies#max-norm-constraint
     def _max_norm(self, w):
@@ -141,11 +152,13 @@ class BasicCNN(nn.Module):
         desired = torch.clamp(norm, 0, self._max_norm_val)
         return w * (desired / (self._eps + norm))
 
+
 class ConfusionDropout(nn.Module):
     '''
     A special form of dropout to challenge the model by causing class confusion
     '''
-    def __init__(self, drop_percent: float, num_top_channels: int, drop_certianty: float, drop_handler = None):
+    def __init__(self, use_activations: bool, original_method: bool,
+                  drop_percent: float, num_top_channels: int, drop_certianty: float, drop_handler = None):
       
         super().__init__()
 
@@ -157,7 +170,12 @@ class ConfusionDropout(nn.Module):
         self.drop_certianty = drop_certianty
         self.drop_handeler = drop_handler
 
-    def get_mask(self, x, y = None):
+        self.original_method = original_method
+        self.use_activations = use_activations
+
+    def get_mask(self, x: torch.Tensor, y=None):
+        if y is None:
+            y = self.y
         '''
         retrieves mask for doc string
         '''
@@ -165,10 +183,105 @@ class ConfusionDropout(nn.Module):
         #retrieve the indicies of the 2 highest model predictions
         top_ind = torch.topk(self.prev_output, k= self.num_top_channels, dim=1)[1]
 
+        #print(top_ind)
+
         #select the weights associated with those model predictions
         selected_weight_cols = self.weight_matrix[top_ind] #Shape: batch, 2, feature size
 
-        test = True
+        if self.original_method:
+
+            selected_weight_diffs = selected_weight_cols[:, 0, :] - selected_weight_cols[:, 1, :] #Shape: batch, feature size
+
+            #weight * channel, Higher Score means higherdrop rate
+            #print(x.shape, selected_weight_diffs.shape, self.weight_matrix.shape)
+
+            if self.use_activations:
+                stored_scores = x * selected_weight_diffs
+                
+            else:
+                stored_scores = selected_weight_diffs
+
+            scores = abs(stored_scores)
+        
+        else:
+            selected_weight_diffs = selected_weight_cols - self.weight_matrix[y].unsqueeze(1)
+
+            # BUG Test
+            #print(torch.mean(x.var(dim=1)))
+            if self.use_activations:
+                stored_scores = x.unsqueeze(1) * selected_weight_diffs
+            else:
+                stored_scores = selected_weight_diffs
+
+            scores = abs(stored_scores)
+
+            scores = torch.max(scores, dim=1)[0]
+
+            # FIX
+            stored_scores = scores
+
+
+        #Number of channels to drop
+        num_dropped = int(x.shape[1] * self.drop_percent)
+
+        #select num_dropped num channels with the highest score
+        dropped_channels = torch.topk(scores, k=num_dropped, dim=1, largest=True)[1]
+
+        mask = torch.ones_like(x).bool()
+
+        # values above certianty set to false IE with certainty of 1.0 this is the same as = False
+        certianty_mask = torch.rand((mask.shape[0], num_dropped), device=mask.device) > self.drop_certianty
+        
+
+        batch_indices = torch.arange(mask.shape[0]).unsqueeze(1).repeat(1, num_dropped)
+
+        mask[batch_indices, dropped_channels] = certianty_mask
+
+        if self.drop_handeler is not None:
+            self.drop_handeler.store_forwardpass(y.to('cpu').detach(),
+                                                    mask.to('cpu').detach(),
+                                                    top_ind.to('cpu').detach(),
+                                                    stored_scores.to('cpu').detach())
+
+        return mask
+
+
+    def forward(self, x: torch.Tensor, y = None):
+        '''
+        forwards dropout
+        '''
+        if self.training:
+            if self.prev_output is not None:
+                mask = self.get_mask(x, y)
+                x = x * mask
+        else:
+            x = x * (1 - (self.drop_percent * self.drop_certianty)) # keep expected value
+        return x
+
+class SuperLabelDropout(ConfusionDropout):
+    def __init__(self, drop_percent: float, num_top_channels: int):
+        # TODO
+        super().__init__(False, False, drop_percent, num_top_channels, drop_certianty=1, drop_handler= DropoutDataHandler())
+
+    def get_mask(self, x, y):
+        '''
+        retrieves mask for doc string
+        '''
+        supers_y = sparse2coarse(y)
+
+        # print(supers)
+
+        #retrieve the indicies of the 2 highest model predictions
+        top_ind = torch.topk(self.prev_output, k= self.num_top_channels, dim=1)[1]
+
+        top_super_ind = sparse2coarse(top_ind, device='mps')
+
+
+
+        #select the weights associated with those model predictions
+        selected_weight_cols = self.weight_matrix[top_ind] #Shape: batch, 2, feature size
+
+        test = False
         # method 1 distance to correct
         if test:
             selected_weight_diffs = selected_weight_cols - self.weight_matrix[y].unsqueeze(1) #Shape: batch, feature size
@@ -191,11 +304,6 @@ class ConfusionDropout(nn.Module):
         #select num_dropped num channels with the highest score
         dropped_channels = torch.topk(scores, k=num_dropped, dim=1, largest=True)[1]
 
-        # shuffle dropped_channels
-        # shuffle_idx = torch.randperm(dropped_channels.size(-1))
-        # dropped_channels = dropped_channels[:, shuffle_idx]
-        # print(dropped_channels.shape)
-
         mask = torch.ones_like(x).bool()
 
         # values above certianty set to false IE with certainty of 1.0 this is the same as = False
@@ -213,19 +321,6 @@ class ConfusionDropout(nn.Module):
                                                  scores.to('cpu').detach())
 
         return mask
-
-
-    def forward(self, x: torch.Tensor, y = None):
-        '''
-        forwards dropout
-        '''
-        if self.training:
-            if self.prev_output is not None:
-                mask = self.get_mask(x, y)
-                x = x * mask
-        else:
-            x = x * (1 - (self.drop_percent * self.drop_certianty)) # keep expected value
-        return x
 
 class DropoutDataHandler():
     '''

@@ -24,14 +24,15 @@ class MnistApp():
 
         self.app = Dash(__name__)
 
-        self.model = BasicCNN(num_classes=10,
+        self.num_classes = 10
+
+        self.model = BasicCNN(num_classes=self.num_classes,
                               in_channels=3,
-                              out_feature_size=2048,
-                              use_reg_dropout=False,
-                              dropout_prob=0.5,
-                              num_drop_channels=2,
-                              drop_certainty=0.1)
-        self.num_epochs = 20
+                              out_feature_size=3072)
+        
+        self.model.init_dropout(use_reg_dropout= False, use_activations= False, original_method= False,
+                                dropout_prob= 0.5, num_drop_channels=3, drop_certainty=0.98)
+        self.num_epochs = 50
         self.train_loader, self.val_loader, self.test_loader = loadData('CIFAR-10',batch_size= 200)
 
 
@@ -40,6 +41,7 @@ class MnistApp():
                                                                                                                     val_loader=self.val_loader,
                                                                                                                     test_loader=self.test_loader,
                                                                                                                     num_epochs=self.num_epochs,
+                                                                                                                    activation_gamma = 0.002,
                                                                                                                     save=True,
                                                                                                                     save_mode='accuracy')
 
@@ -108,7 +110,7 @@ class MnistApp():
         @self.app.callback(Output("label_acc", "figure"),
                            Input('corr', 'n_clicks')) # output graph is what us updated
         def update_bar(corr):
-            y= np.arange(0,10,1)
+            y= np.arange(0,self.num_classes,1)
             fig  = px.bar(x=self.label_acc,
                            y=y,
                            color=self.label_acc,
@@ -185,12 +187,13 @@ class MnistApp():
                                                                      'weight_diffs')
 
             dropped_y = dropped_y.numpy()
+            print(np.count_nonzero(dropped_y))
             weight_y = weight_y.numpy()
 
 
             channel_fig = px.imshow(img=np.transpose(dropped_y),
                                     title='Most Dropped Channels',
-                                    color_continuous_scale='Sunsetdark',
+                                    color_continuous_scale='gray_r',
                                     aspect="auto")
 
             weight_diff_fig = px.imshow(img=np.transpose(weight_y),
@@ -233,7 +236,7 @@ def model_grid_heatmap(accuracy_path, losses_path, drops_path, features_path ):
     features = np.loadtxt(fname= features_path, delimiter= ',')
 
     accuracy_map = px.imshow(img=accuracys,
-                             labels=dict(x="Regular dropout?", y="Number of Features", color="Accuracy"),
+                             labels=dict(x="Drop %", y="Number of Labels used", color="Accuracy"),
                              x= drops[0].astype(str),
                              y= features[:, 0].astype(str),
                              text_auto=True,
