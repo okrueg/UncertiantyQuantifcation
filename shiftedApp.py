@@ -31,7 +31,7 @@ class feature_reduction():
     def fit(self, x, model, dim_red):
         x = torch.from_numpy(x).float()
         #x = dim_inc(x)
-        x = model.forwardEmbeddings(x).detach().numpy()
+        x = model.forward_embeddings(x).detach().numpy()
         self.reduction = self.reduction.fit(x)
         self.fitted = True
 
@@ -64,6 +64,7 @@ class model_visualizer():
         self.model = BasicNN(input_dim=2,
                             hidden_dim=10,
                             output_dim=1)
+
         self.num_epochs = 150
         
         self.reduction = None

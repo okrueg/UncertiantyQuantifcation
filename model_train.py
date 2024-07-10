@@ -70,15 +70,16 @@ def train_2d(x: np.ndarray,
         total_embeddings = model.forward_embeddings(x_class1)
 
         # update dropout distributions
-        model.dropout.update_distribution(total_embeddings, train_dist=True)
-        model.dropout.update_distribution(shift_dist, train_dist=False)
+        if hasattr(model, 'dropout'):
+            model.dropout.update_distribution(total_embeddings, train_dist=True)
+            model.dropout.update_distribution(shift_dist, train_dist=False)
 
-        #print(torch.mean(model.dropout.recent_mean_diff))
+            #print(torch.mean(model.dropout.recent_mean_diff))
 
-        drop_history = np.vstack((drop_history, model.dropout.recent_mean_diff))
+            drop_history = np.vstack((drop_history, model.dropout.recent_mean_diff))
 
-        # decay alpha value to slowly introduce dropout
-        model.dropout.alpha = model.dropout.alpha * .9
+            # decay alpha value to slowly introduce dropout
+            model.dropout.alpha = model.dropout.alpha * .9
 
     return drop_history
         #scheduler.step()

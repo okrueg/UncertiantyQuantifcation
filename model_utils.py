@@ -33,7 +33,8 @@ def train_fas_mnist(model: BasicCNN,
                     test_loader: DataLoader,
                     num_epochs: int,
                     activation_gamma: float,
-                    lr = 0.015,
+                    lr = 0.025,
+                    #lr = 0.0125,
                     save = False,
                     save_mode = 'loss',
                     verbose = True):
@@ -48,7 +49,7 @@ def train_fas_mnist(model: BasicCNN,
 
     optimizer = SGD(model.parameters(), lr=lr, momentum= 0.95)#, weight_decay= 0.001) # , nesterov= True
     #scheduler = ExponentialLR(optimizer,0.90)
-    scheduler = StepLR(optimizer, step_size=5, gamma=0.9)
+    scheduler = StepLR(optimizer, step_size=4, gamma=0.90)
 
     best_val_loss = np.inf
     best_test_acc = -1 * np.inf
@@ -124,6 +125,8 @@ def train_fas_mnist(model: BasicCNN,
 
             # ---- Calculate train accuracys for the Batch ----
             predictions = torch.max(train_output, dim=1)[1]
+
+            print(predictions)
             acc = torch.eq(y, predictions).int()
 
             train_total_acc[batch_idx] = torch.mean(acc, dtype= torch.float)
@@ -132,7 +135,7 @@ def train_fas_mnist(model: BasicCNN,
             train_output_scalar[batch_idx] = torch.sum(abs(u), dim=1)[1]
 
 
-
+        #print(model.dropout.drop_percent)
         if hasattr(model.dropout, "drop_handeler") and model.dropout.drop_handeler is not None:
 
             # BUG TESTING
@@ -190,6 +193,7 @@ def train_fas_mnist(model: BasicCNN,
             print(f'Testing Loss:    {test_loss:.4f} | Testing Accuracy:   {test_acc:.4f}')
             print()
 
+            save_name = f'model_{num_epochs}_isreg_{model.use_reg_dropout}_useAct_{model.use_activations}_original_method_{model.originalMethod}.path'
         if save:
             if save_mode == 'loss':
                 if  overall_val_loss < best_val_loss:
@@ -198,7 +202,7 @@ def train_fas_mnist(model: BasicCNN,
 
                     best_val_loss = overall_val_loss
 
-                    best_model  = copy(model)
+                    torch.save(model, save_name)
 
             elif save_mode == 'accuracy':
                 if test_acc > best_test_acc:
@@ -207,19 +211,18 @@ def train_fas_mnist(model: BasicCNN,
                     best_test_acc = test_acc
 
                     #best_model  = deepcopy(model)
-                    best_model  = copy(model)
+                    torch.save(model, save_name)
             else:
                 raise ValueError(f"Invalid save mode: {save_mode}")
 
-            torch.save(best_model, f'model_{num_epochs}_{model.use_reg_dropout}.path')
-            #torch.save(model.state_dict(), "model_best_val.path")
-    return (train_losses, val_losses), (train_accs, test_accs), best_model
 
-def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, verbose = True):
+    return (train_losses, val_losses), (train_accs, test_accs), save_name
+
+
+def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, verbose = True):
     '''
     model testing functionality
     '''
-    model.eval()
     with torch.no_grad():
         loss_fn = torch.nn.CrossEntropyLoss()
         label_acc = [[] for x in range(10)]
@@ -229,7 +232,19 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, verbose = True):
             x = x.to(DEVICE)
             y = y.to(DEVICE)
 
-            test_output, _ = model(x)
+            if hasattr(model.dropout, "weight_matrix"):
+                with torch.no_grad():
+                    model.eval()
+                    first_output, _ = model(x)
+                model.dropout.weight_matrix = model.fc3.weight
+                model.dropout.prev_output = first_output
+
+            if evaluate:
+                model.eval()
+            else:
+                model.train()
+
+            test_output, _ = model(x, y)
 
 
             #----BUG TEST-----
@@ -262,6 +277,25 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, verbose = True):
 
 
     return overall_test_loss, total_acc, label_acc
+
+def test_survival(model: BasicCNN, test_loader: DataLoader, steps = [0.0, 0.2, 0.4, 0.6, 0.8, 0.95]):
+
+    survival_accs = []
+
+    for drop_rate in steps:
+        model.init_dropout(use_reg_dropout=False,
+                           use_activations=True,
+                           continous_dropout=False,
+                           original_method= True,
+                           dropout_prob= drop_rate,
+                           num_drop_channels=3,
+                           drop_certainty=1.0)
+        model.train()
+
+        _, acc, _ = test_fas_mnist(model, test_loader, evaluate=False, verbose=False)
+        survival_accs.append(acc)
+
+    return survival_accs
 
 def model_grid_generator(x_range: tuple, y_range: tuple, grid_size: tuple):
     '''
@@ -378,3 +412,14 @@ elif torch.backends.mps.is_available():
 # # model.load_state_dict(torch.load("model_best_val.path"), strict=False)
 # print("new")
 # test_fas_mnist(model, test_loader=test_loader)
+
+#------- Model Survival Testing
+
+# regular_Model = torch.load("model_31_isreg_True_useAct_True_original_method_True.path")
+# our_Model = torch.load("model_30_isreg_False_useAct_True_original_method_True.path")
+
+# print(test_survival(regular_Model, test_loader=test_loader))
+
+# print('Our Model')
+
+# print(test_survival(our_Model, test_loader=test_loader))

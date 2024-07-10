@@ -17,13 +17,14 @@ class BasicNN(nn.Module):
         self.hidden1 = nn.Linear(hidden_dim, hidden_dim)
         self.output = nn.Linear(hidden_dim, output_dim)
 
-        self.dropout = shiftedDistDropout(hidden_dim)
+        # self.dropout = ConfusionDropout(use_activations=True, original_method=True, continous_dropout=False,
+        #                                 drop_percent=0.5, num_top_channels=1, drop_certianty=1.0)
 
         self.ReLU = nn.LeakyReLU(0.2)
         self.sigmoid = nn.Sigmoid()
 
 
-    def forward(self, x):
+    def forward(self, x, y=None):
         '''
         forwards
         '''
@@ -35,7 +36,7 @@ class BasicNN(nn.Module):
 
         x = self.ReLU(x)
 
-        x = self.dropout.forward(x)
+        x = self.dropout.forward(x, y)
 
         x = self.output(x)
 
@@ -92,16 +93,18 @@ class BasicCNN(nn.Module):
         self._max_norm_val = 3
         self._eps = 1e-8
 
-    def init_dropout(self, use_reg_dropout: bool, use_activations: bool, original_method: bool,
+    def init_dropout(self, use_reg_dropout: bool, use_activations: bool, continous_dropout:bool, original_method: bool,
                       dropout_prob: float, num_drop_channels: int,  drop_certainty: float):
         
         self.use_reg_dropout = use_reg_dropout
+        self.use_activations = use_activations
+        self.originalMethod = original_method
 
         if use_reg_dropout:
             self.dropout = nn.Dropout(dropout_prob)
 
         else:
-            self.dropout= ConfusionDropout(use_activations, original_method, dropout_prob, int(num_drop_channels), drop_certainty)#, DropoutDataHandler())
+            self.dropout= ConfusionDropout(use_activations, original_method, continous_dropout, dropout_prob, int(num_drop_channels), drop_certainty)#, DropoutDataHandler())
             #self.dropout = SuperLabelDropout(dropout_prob, int(num_drop_channels))
 
 
@@ -157,7 +160,7 @@ class ConfusionDropout(nn.Module):
     '''
     A special form of dropout to challenge the model by causing class confusion
     '''
-    def __init__(self, use_activations: bool, original_method: bool,
+    def __init__(self, use_activations: bool, original_method: bool, continous_dropout: bool,
                   drop_percent: float, num_top_channels: int, drop_certianty: float, drop_handler = None):
       
         super().__init__()
@@ -172,6 +175,7 @@ class ConfusionDropout(nn.Module):
 
         self.original_method = original_method
         self.use_activations = use_activations
+        self.continous_dropout = continous_dropout
 
     def get_mask(self, x: torch.Tensor, y=None):
         if y is None:
@@ -220,22 +224,52 @@ class ConfusionDropout(nn.Module):
             # FIX
             stored_scores = scores
 
+        if not self.continous_dropout:
+            #Number of channels to drop
+            num_dropped = int(x.shape[1] * self.drop_percent)
 
-        #Number of channels to drop
-        num_dropped = int(x.shape[1] * self.drop_percent)
+            #select num_dropped num channels with the highest score
+            dropped_channels = torch.topk(scores, k=num_dropped, dim=1, largest=True)[1]
 
-        #select num_dropped num channels with the highest score
-        dropped_channels = torch.topk(scores, k=num_dropped, dim=1, largest=True)[1]
+            mask = torch.ones_like(x).bool()
 
-        mask = torch.ones_like(x).bool()
+            # values above certianty set to false IE with certainty of 1.0 this is the same as = False
+            certianty_mask = torch.rand((mask.shape[0], num_dropped), device=mask.device) > self.drop_certianty      
 
-        # values above certianty set to false IE with certainty of 1.0 this is the same as = False
-        certianty_mask = torch.rand((mask.shape[0], num_dropped), device=mask.device) > self.drop_certianty
+            batch_indices = torch.arange(mask.shape[0]).unsqueeze(1).repeat(1, num_dropped)
+
+            mask[batch_indices, dropped_channels] = certianty_mask
         
+        else:
 
-        batch_indices = torch.arange(mask.shape[0]).unsqueeze(1).repeat(1, num_dropped)
+            ind = torch.argsort(scores, dim=1, descending=False)
 
-        mask[batch_indices, dropped_channels] = certianty_mask
+            ind = ind.to(device=x.device)
+
+            ranks = torch.zeros_like(ind, dtype=torch.int64, device=x.device)
+    
+            batch_indices = torch.arange(x.shape[0], device=x.device).unsqueeze(1).repeat(1, x.shape[1])
+
+            ranks[batch_indices, ind] = torch.arange(1, x.shape[1] + 1, device=x.device)
+
+            ranks = ranks/x.shape[1]
+
+            # print('scores', scores[0])
+
+            # print('Before', ranks[0])
+
+            ranks = self.contFunc(ranks, mid= (1.05- self.drop_percent))
+           
+            mask = torch.ones_like(x).bool()
+            
+            mask = torch.rand_like(x, device=mask.device) >= (ranks)
+
+            # print('After',ranks[0])
+            # print('mask', mask[0])
+
+            #print(torch.count_nonzero(mask)/(10*200))
+
+
 
         if self.drop_handeler is not None:
             self.drop_handeler.store_forwardpass(y.to('cpu').detach(),
@@ -244,6 +278,22 @@ class ConfusionDropout(nn.Module):
                                                     stored_scores.to('cpu').detach())
 
         return mask
+
+
+    def contFunc(self, ranks: torch.Tensor, mid=0.5, slope=2):
+        '''
+        applys a smoothing Tanh function to the ranks
+        the mid will modify the halfway of the tanHfunc (where x ==y)
+        Higher mid is less dropped
+        slope alters the amount of smoothing, a higher slope makes the decision more Binary
+
+        https://www.desmos.com/calculator/q9wmfawwqz
+        '''
+
+        func_ranks = slope * (ranks - mid)
+        func_ranks = torch.tanh(func_ranks)
+
+        return (func_ranks+1)/2
 
 
     def forward(self, x: torch.Tensor, y = None):
@@ -255,13 +305,13 @@ class ConfusionDropout(nn.Module):
                 mask = self.get_mask(x, y)
                 x = x * mask
         else:
-            x = x * (1 - (self.drop_percent * self.drop_certianty)) # keep expected value
+                x = x * (1 - (self.drop_percent * self.drop_certianty)) # keep expected value
         return x
 
 class SuperLabelDropout(ConfusionDropout):
     def __init__(self, drop_percent: float, num_top_channels: int):
         # TODO
-        super().__init__(False, False, drop_percent, num_top_channels, drop_certianty=1, drop_handler= DropoutDataHandler())
+        super().__init__(False, False, False, drop_percent, num_top_channels, drop_certianty=1, drop_handler= DropoutDataHandler())
 
     def get_mask(self, x, y):
         '''

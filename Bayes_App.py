@@ -12,10 +12,10 @@ import plotly.express as px
 import numpy as np
 import torch
 
-from model_architectures import BasicCNN
-import model_utils
+from bayesArchetectures import BNN
+import bayesUtils
 from datasets import loadData
-
+import plotly.figure_factory as ff
 
 class MnistApp():
     """
@@ -34,28 +34,25 @@ class MnistApp():
 
         self.train_loader, self.val_loader, self.test_loader = loadData('CIFAR-10',batch_size= 200)
 
-        self.model = BasicCNN(num_classes=self.num_classes,
-                              in_channels=3,
-                              out_feature_size=3072)
+        self.model = BNN(in_channels=3, in_feat= 32*32*3, out_feat= self.num_classes)
         
-        self.model.init_dropout(use_reg_dropout= False, use_activations= False, original_method= False, continous_dropout= True,
-                                dropout_prob= 0.5, num_drop_channels=3, drop_certainty=1)
+        # self.model.init_dropout(use_reg_dropout= False, use_activations= False, original_method= False, continous_dropout= True,
+        #                         dropout_prob= 0.5, num_drop_channels=3, drop_certainty=1)
         self.num_epochs = 30
 
         #self.model = torch.load("model_100_isreg_False_useAct_False_original_method_False.path")
 
-        (self.train_loss, self.val_loss),(self.train_acc, self.test_acc), self.best_model_path = model_utils.train_fas_mnist(model=self.model,
+        (self.train_loss, self.val_loss),(self.train_acc, self.test_acc), self.best_model_path = bayesUtils.train_Bayes(model=self.model,
                                                                                                                     train_loader=self.train_loader,
-                                                                                                                    val_loader=self.val_loader,
                                                                                                                     test_loader=self.test_loader,
                                                                                                                     num_epochs=self.num_epochs,
-                                                                                                                    activation_gamma = 0.003,
+                                                                                                                    num_mc= 20,
                                                                                                                     save=True,
                                                                                                                     save_mode='accuracy')
 
         self.model = torch.load(self.best_model_path)
 
-        self.final_loss, self.final_acc, self.label_acc = model_utils.test_fas_mnist(self.model, test_loader=self.test_loader)
+        self.final_loss, self.final_acc, self.label_acc = bayesUtils.test_Bayes(self.model, test_loader=self.test_loader, num_mc=10)
         self.label_acc = np.array(self.label_acc)
 
 
@@ -200,11 +197,40 @@ class MnistApp():
             selected_label = int(selected_label)
 
             #weight_data = self.model.fc3.weight[selected_label].to('cpu').detach().numpy()
+            means = torch.flatten(self.model.fc3.mu_weight[selected_label].to('cpu').detach())
+            rho = torch.flatten(self.model.fc3.rho_weight[selected_label].to('cpu').detach())
 
-            weight_data = torch.flatten(self.model.fc3.weight.to('cpu').detach()).numpy()
+            #print(self.model.output_layer.mu_weight.to('cpu').detach().shape)
+            # means = torch.flatten(self.model.output_layer.mu_weight.to('cpu').detach())
+            # rho = torch.flatten(self.model.output_layer.rho_weight.to('cpu').detach())
 
-            fig = px.histogram(weight_data, nbins=200, range_x= [-0.75, 0.75], 
-                               color_discrete_sequence=['indianred'], width= 900, title= f"Weight Dist for Label {selected_label}")
+            def rho_to_std(rho):
+                return torch.log1p(torch.exp(rho))
+
+            # Convert rho to standard deviations
+            stds = rho_to_std(rho)
+
+            # Number of samples to generate for each distribution
+            num_samples = 200
+
+            # Generate samples from the distributions
+            samples = []
+            for mean, std in zip(means, stds):
+                distribution = torch.distributions.Normal(mean, std)
+                samples.append(distribution.sample((num_samples,)).numpy())
+
+            # Convert samples to numpy arrays for plotting
+            hist_data = [s for s in samples]
+
+            # Define group labels
+            group_labels = [f'Weight {i+1}' for i in range(len(means))]
+
+            # Create distplot with custom bin_size
+            fig = ff.create_distplot(hist_data, group_labels, show_hist=False, show_rug=False)#, bin_size=.2)
+            # fig.show()
+
+            # fig = px.histogram(weight_data, nbins=200, range_x= [-0.75, 0.75], 
+            #                    color_discrete_sequence=['indianred'], width= 900, title= f"Weight Dist for Label {selected_label}")
 
             fig.update_layout(
                     showlegend=False,
@@ -296,26 +322,6 @@ def model_grid_heatmap(accuracy_path, losses_path, drops_path, features_path ):
 
     accuracy_map.show()
 
-
-def model_survival_fig(regular_Model, our_Model, loader):
-
-    reg_accs = model_utils.test_survival(regular_Model, test_loader=loader)
-
-    our_accs = model_utils.test_survival(our_Model, test_loader=loader)
-
-    x = [0.0, 0.2, 0.4, 0.6, 0.8, 0.95]
-    fig = px.line(x=x, y=reg_accs, range_y=[0,1])
-    fig.add_scatter(x=x, y= our_accs, mode='lines')
-
-    fig.data[0].name = 'Regular Dropout'
-    fig.data[1].name = 'Confussion Dropout'
-
-    fig.update_layout(
-                showlegend=True,
-                xaxis_title="Drop amount",
-                yaxis_title="Accuracy"
-                )
-    fig.show()
 
 vis = MnistApp()
 vis.run()
