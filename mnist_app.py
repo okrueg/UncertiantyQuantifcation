@@ -36,11 +36,11 @@ class MnistApp():
 
         self.model = BasicCNN(num_classes=self.num_classes,
                               in_channels=3,
-                              out_feature_size=3072)
+                              out_feature_size=20)
         
-        self.model.init_dropout(use_reg_dropout= False, use_activations= False, original_method= False, continous_dropout= True,
-                                dropout_prob= 0.5, num_drop_channels=3, drop_certainty=1)
-        self.num_epochs = 30
+        self.model.init_dropout(use_reg_dropout= True, use_activations= True, original_method= False, continous_dropout= False,
+                                dropout_prob= 0.5, num_drop_channels=3, drop_certainty=0.95)
+        self.num_epochs = 20
 
         #self.model = torch.load("model_100_isreg_False_useAct_False_original_method_False.path")
 
@@ -320,10 +320,14 @@ def model_survival_fig(regular_Model, our_Model, loader):
 vis = MnistApp()
 vis.run()
 
-# train_loader,val_loader,test_loader = loadData('CIFAR-10',batch_size= 200)
-# regular_model = torch.load("model_31_isreg_True_useAct_True_original_method_True.path")
+# train_loader,val_loader,test_loader = loadData('CIFAR-10',batch_size= 2000)
+# # regular_model = torch.load("model_31_isreg_True_useAct_True_original_method_True.path")
 # our_model = torch.load("model_30_isreg_False_useAct_True_original_method_True.path")
 
+# images, labels = next(iter(test_loader))
+
+# x = model_utils.feature_correlation(images,labels, our_model)
+# print(x.shape)
 # model_survival_fig(regular_model, our_model, test_loader)
 
 # model_grid_heatmap('acc_result.csv',

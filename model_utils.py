@@ -6,7 +6,7 @@ from torch import nn
 from torch.optim import SGD
 from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm
-
+import plotly.express as px
 import torch.utils
 from torch.utils.data import DataLoader
 from datasets import loadData
@@ -126,7 +126,7 @@ def train_fas_mnist(model: BasicCNN,
             # ---- Calculate train accuracys for the Batch ----
             predictions = torch.max(train_output, dim=1)[1]
 
-            print(predictions)
+            #print(predictions)
             acc = torch.eq(y, predictions).int()
 
             train_total_acc[batch_idx] = torch.mean(acc, dtype= torch.float)
@@ -227,6 +227,7 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
         loss_fn = torch.nn.CrossEntropyLoss()
         label_acc = [[] for x in range(10)]
         overall_test_loss = 0
+        activations_ = []
 
         for batch_idx, (x, y) in enumerate(test_loader):
             x = x.to(DEVICE)
@@ -244,8 +245,9 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
             else:
                 model.train()
 
-            test_output, _ = model(x, y)
+            test_output, activation = model(x, y)
 
+            activations_.append(activation)
 
             #----BUG TEST-----
             #print('output',torch.softmax(test_output, dim=1)[0:2])
@@ -262,6 +264,14 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
                 label_acc[label].append(acc[ind].item())
 
         #---- Final calculation for returned Values ----
+        all_acts = torch.mean(torch.stack(activations_), dim=0)
+
+        #---- Correlations
+        # corr = feature_correlation(all_acts)
+
+        # heatmap = px.imshow(corr, text_auto=False, color_continuous_midpoint= 0.0, color_continuous_scale= 'RdBu')#, color_continuous_midpoint= 0.0001)
+        # heatmap.show()
+
         overall_test_loss = overall_test_loss/len(test_loader)
 
         for ind, x in enumerate(label_acc):
@@ -386,6 +396,23 @@ def model_grid_training(model_params: np.ndarray,
 
     test = np.apply_along_axis(encompassed, axis=-1, arr=model_params)
     return test
+
+def feature_correlation(activations):
+
+    # x.to('mps')
+    # y.to('mps')
+    # model.to('mps')
+
+    # _, activations = model(x, y)
+    
+    activations = activations.to('cpu').numpy()
+
+    print(activations.shape)
+    
+    return np.cov(activations, rowvar=False)
+
+
+
 
 
 DEVICE = torch.device('cpu')

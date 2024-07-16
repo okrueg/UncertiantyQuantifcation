@@ -38,15 +38,15 @@ class MnistApp():
         
         # self.model.init_dropout(use_reg_dropout= False, use_activations= False, original_method= False, continous_dropout= True,
         #                         dropout_prob= 0.5, num_drop_channels=3, drop_certainty=1)
-        self.num_epochs = 30
+        self.num_epochs = 1
 
-        #self.model = torch.load("model_100_isreg_False_useAct_False_original_method_False.path")
+        #self.model = torch.load("model_2_BNN.path")
 
         (self.train_loss, self.val_loss),(self.train_acc, self.test_acc), self.best_model_path = bayesUtils.train_Bayes(model=self.model,
                                                                                                                     train_loader=self.train_loader,
                                                                                                                     test_loader=self.test_loader,
                                                                                                                     num_epochs=self.num_epochs,
-                                                                                                                    num_mc= 20,
+                                                                                                                    num_mc= 1,
                                                                                                                     save=True,
                                                                                                                     save_mode='accuracy')
 
@@ -142,7 +142,6 @@ class MnistApp():
 
             fig.update_yaxes(
                 tickvals=y,
-                #ticktext=['0', 'Five', 'Ten', 'Fifteen', 'Twenty']
             )
             return fig
 
@@ -183,7 +182,7 @@ class MnistApp():
                         xaxis_title="Epoch",
                         yaxis_title="Accuracy"
                         )
-
+            # For saving the Figure
             fig.write_html(self.buffer)
             html_bytes = self.buffer.getvalue().encode()
             encoded = b64encode(html_bytes).decode()
@@ -197,45 +196,32 @@ class MnistApp():
             selected_label = int(selected_label)
 
             #weight_data = self.model.fc3.weight[selected_label].to('cpu').detach().numpy()
-            means = torch.flatten(self.model.fc3.mu_weight[selected_label].to('cpu').detach())
-            rho = torch.flatten(self.model.fc3.rho_weight[selected_label].to('cpu').detach())
+            means = torch.flatten(self.model.fc2.mu_weight[selected_label].to('cpu').detach())
+            rho = torch.flatten(self.model.fc2.rho_weight[selected_label].to('cpu').detach())
 
+            # if you wanna see them all
             #print(self.model.output_layer.mu_weight.to('cpu').detach().shape)
             # means = torch.flatten(self.model.output_layer.mu_weight.to('cpu').detach())
             # rho = torch.flatten(self.model.output_layer.rho_weight.to('cpu').detach())
 
-            def rho_to_std(rho):
-                return torch.log1p(torch.exp(rho))
+            stds = torch.log1p(torch.exp(rho))
 
-            # Convert rho to standard deviations
-            stds = rho_to_std(rho)
-
-            # Number of samples to generate for each distribution
-            num_samples = 200
-
-            # Generate samples from the distributions
             samples = []
+
             for mean, std in zip(means, stds):
+
                 distribution = torch.distributions.Normal(mean, std)
-                samples.append(distribution.sample((num_samples,)).numpy())
 
-            # Convert samples to numpy arrays for plotting
-            hist_data = [s for s in samples]
+                samples.append(distribution.sample((means.shape[0],)).numpy())
 
-            # Define group labels
-            group_labels = [f'Weight {i+1}' for i in range(len(means))]
+            group_labels = [f'Weight {i+1}' for i in range(len(means))] # have to have labels :/
 
-            # Create distplot with custom bin_size
-            fig = ff.create_distplot(hist_data, group_labels, show_hist=False, show_rug=False)#, bin_size=.2)
-            # fig.show()
-
-            # fig = px.histogram(weight_data, nbins=200, range_x= [-0.75, 0.75], 
-            #                    color_discrete_sequence=['indianred'], width= 900, title= f"Weight Dist for Label {selected_label}")
+            fig = ff.create_distplot(samples, group_labels, show_hist=False, show_rug=False)
 
             fig.update_layout(
                     showlegend=False,
-                    xaxis_title="Weight Value",
-                    yaxis_title="Num weights"
+                    xaxis_title="Weight Mean",
+                    yaxis_title="Probability"
                     )
 
             return fig

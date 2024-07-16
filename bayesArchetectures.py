@@ -2,8 +2,9 @@ from bayesian_torch.layers.variational_layers import LinearReparameterization, C
 import torch.nn.functional as F
 from torch import nn
 import torch
-import sinData
 import numpy as np
+
+
 class BNN(nn.Module):
     def __init__(self, in_channels, in_feat, out_feat):
         super(BNN, self).__init__()
@@ -16,9 +17,9 @@ class BNN(nn.Module):
 
         self.flatten = nn.Flatten()
 
-        self.fc1 = LinearReparameterization(12544, 6272)
+        self.fc1 = LinearReparameterization(12544, 2048)
 
-        self.fc2 = LinearReparameterization(6272, 10)
+        self.fc2 = LinearReparameterization(2048, 10)
 
         self.activation= torch.nn.LeakyReLU()
 
@@ -33,9 +34,11 @@ class BNN(nn.Module):
         x = self.activation(x)
 
         x = self.pool(x)
+        #print(x.shape)
+
 
         x = self.flatten(x)
-
+        
         x, kl = self.fc1(x)
         kl_sum += kl
         x = self.activation(x)
@@ -85,4 +88,3 @@ class basic(nn.Module):
 #           epoch = epoch)
 #     scheduler.step()
 
-# test(model,10, sinData.test_loader)
