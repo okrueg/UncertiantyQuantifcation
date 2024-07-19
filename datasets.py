@@ -107,22 +107,36 @@ def loadData(dataset: str, batch_size: int, train_val_split = 0.99):
                                         transform=transform, subclass_transform= SubClassTransform())
         case 'CIFAR-10':
 
-            transform = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True),
-                                    v2.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))])
+            train_transform = v2.Compose([v2.RandomCrop(32, padding=4, padding_mode='reflect'),
+                                    v2.RandomHorizontalFlip(),
+                                    v2.ToImage(),
+                                    v2.ToDtype(torch.float32, scale=True),
+                                    v2.Normalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))])
+            
+            test_transform = v2.Compose([ v2.ToImage(), 
+                                          v2.ToDtype(torch.float32, scale=True),
+                                          v2.Normalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))])
             
             trainset = datasets.CIFAR10(root='./data', train=True,
-                                        download=True, transform=transform)
+                                        download=True, transform=train_transform)
             testset = datasets.CIFAR10(root='./data', train=False,
-                                                download=True, transform=transform)
+                                                download=True, transform=test_transform)
         
         case 'CIFAR-100':
-            transform = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True),
-                                    v2.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))]) #mean and std have to be sequences (e.g., tuples)
+            train_transform = v2.Compose([v2.RandomCrop(32, padding=4, padding_mode='reflect'),
+                                    v2.RandomHorizontalFlip(),
+                                    v2.ToImage(),
+                                    v2.ToDtype(torch.float32, scale=True),
+                                    v2.Normalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))])
+            
+            test_transform = v2.Compose([ v2.ToImage(), 
+                                          v2.ToDtype(torch.float32, scale=True),
+                                          v2.Normalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))])
             
             trainset = datasets.CIFAR100(root='./data', train=True,
-                                        download=True, transform=transform, target_transform= None)
+                                        download=True, transform=train_transform, target_transform= None)
             testset = datasets.CIFAR100(root='./data', train=False,
-                                                download=True, transform=transform, target_transform= None)
+                                                download=True, transform=test_transform, target_transform= None)
             
             #trainset.fi
 

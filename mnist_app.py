@@ -12,7 +12,7 @@ import plotly.express as px
 import numpy as np
 import torch
 
-from model_architectures import BasicCNN
+from model_architectures import BasicCNN, FromBayesCNN
 import model_utils
 from datasets import loadData
 
@@ -34,13 +34,17 @@ class MnistApp():
 
         self.train_loader, self.val_loader, self.test_loader = loadData('CIFAR-10',batch_size= 200)
 
-        self.model = BasicCNN(num_classes=self.num_classes,
-                              in_channels=3,
-                              out_feature_size=20)
+        # self.model = BasicCNN(num_classes=self.num_classes,
+        #                       in_channels=3,
+        #                       out_feature_size=20)
         
-        self.model.init_dropout(use_reg_dropout= True, use_activations= True, original_method= False, continous_dropout= False,
-                                dropout_prob= 0.5, num_drop_channels=3, drop_certainty=0.95)
-        self.num_epochs = 20
+        self.model = FromBayesCNN(num_classes=self.num_classes,
+                        in_channels=3,
+                        out_feature_size=20)
+        
+        # self.model.init_dropout(use_reg_dropout= True, use_activations= True, original_method= False, continous_dropout= False,
+        #                         dropout_prob= 0.5, num_drop_channels=3, drop_certainty=0.95)
+        self.num_epochs = 90
 
         #self.model = torch.load("model_100_isreg_False_useAct_False_original_method_False.path")
 
@@ -49,8 +53,9 @@ class MnistApp():
                                                                                                                     val_loader=self.val_loader,
                                                                                                                     test_loader=self.test_loader,
                                                                                                                     num_epochs=self.num_epochs,
-                                                                                                                    activation_gamma = 0.003,
-                                                                                                                    save=True,
+                                                                                                                    activation_gamma = 0.000,
+                                                                                                                    lr = 0.001,
+                                                                                                                    save=False,
                                                                                                                     save_mode='accuracy')
 
         self.model = torch.load(self.best_model_path)

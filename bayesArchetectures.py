@@ -17,9 +17,9 @@ class BNN(nn.Module):
 
         self.flatten = nn.Flatten()
 
-        self.fc1 = LinearReparameterization(12544, 2048)
+        self.fc1 = LinearReparameterization(12544, 10)
 
-        self.fc2 = LinearReparameterization(2048, 10)
+        self.fc2 = LinearReparameterization(10, 10)
 
         self.activation= torch.nn.LeakyReLU()
 
