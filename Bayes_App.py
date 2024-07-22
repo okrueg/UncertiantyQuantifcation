@@ -34,19 +34,19 @@ class MnistApp():
 
         self.train_loader, self.val_loader, self.test_loader = loadData('CIFAR-10',batch_size= 200)
 
-        self.model = BNN(in_channels=3, in_feat= 32*32*3, out_feat= self.num_classes)
+        self.model = BNN(in_channels=3)
         
         # self.model.init_dropout(use_reg_dropout= False, use_activations= False, original_method= False, continous_dropout= True,
         #                         dropout_prob= 0.5, num_drop_channels=3, drop_certainty=1)
-        self.num_epochs = 2
+        self.num_epochs = 91
 
         #self.model = torch.load("model_20_BNN.path")
 
         (self.train_loss, self.val_loss),(self.train_acc, self.test_acc), self.best_model_path = bayesUtils.train_Bayes(model=self.model,
-                                                                                                                    train_loader=self.test_loader,
+                                                                                                                    train_loader=self.train_loader,
                                                                                                                     test_loader=self.test_loader,
                                                                                                                     num_epochs=self.num_epochs,
-                                                                                                                    num_mc= 1,
+                                                                                                                    num_mc= 5,
                                                                                                                     temperature= 1.0,
                                                                                                                     lr= 0.001,
                                                                                                                     save=True,

@@ -37,7 +37,6 @@ def train_Bayes(model: BNN,
 
     best_test_acc = -1 * np.inf
 
-    best_model = deepcopy(model)
     train_losses = []
     val_losses = []
 

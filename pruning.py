@@ -8,8 +8,7 @@ class PruneByMU(prune.BasePruningMethod):
     PRUNING_TYPE = 'unstructured'
 
     mu_mask = torch.empty(0)
-    mask1 = None
-    mask2 = None
+
 
     def __init__(self, amount: float):
         super().__init__()
@@ -21,22 +20,18 @@ class PruneByMU(prune.BasePruningMethod):
         if PruneByMU.mu_mask.nelement() > 0:
 
             rho_mask = PruneByMU.mu_mask.clone()
-
-            #print(rho_mask)
-
-            #PruneByMU.mask2 = rho_mask.clone()
         
-            rho_mask[rho_mask == 0] = torch.inf
+            # rho_mask[PruneByMU.mu_mask == 0] = torch.inf
 
-            PruneByMU.mu_mask = torch.empty(0)
+            # values_not = rho_mask[(rho_mask == torch.inf)]
 
-            #print(torch.equal(PruneByMU.mask1, PruneByMU.mask2))
+            # rho_mask[rho_mask == torch.inf] = 0
+            
+            # print('vals', values_not.numel()/rho_mask.numel())
 
-            return PruneByMU.mu_mask
+            return rho_mask
         
         else:
-        
-            print('mask')
 
             # Get the L1  of the weights
             t = t.abs()
@@ -46,7 +41,7 @@ class PruneByMU(prune.BasePruningMethod):
             
             _, topk_indicies = torch.topk(t, num_prune, largest=False)
 
-            mask = default_mask
+            mask = default_mask.clone()
 
             mask[topk_indicies] = 0
 
@@ -57,8 +52,6 @@ class PruneByMU(prune.BasePruningMethod):
             #mask = torch.rand_like(t)
 
             PruneByMU.mu_mask = mask.clone()
-
-            #PruneByMU.mask1 = mask.clone()
             
             return PruneByMU.mu_mask
 
@@ -198,8 +191,8 @@ class PruneByHyper(prune.BasePruningMethod):
             
             mask = PruneByHyper.mask.clone()
 
-            #if self.isRho:
-                #mask[mask == 0 ] = torch.inf
+            if self.isRho:
+                mask[mask == 0 ] = torch.inf
 
             return mask
 
@@ -264,19 +257,17 @@ class PruneByKL(prune.BasePruningMethod):
             num_elements = t.numel()
             num_prune = int(self.amount * num_elements)
             
-            topk_values, _ = torch.topk(kl_scores.view(-1), num_prune, largest=False)
+            topk_values, topk_ind = torch.topk(kl_scores.view(-1), num_prune, largest=False)
 
             threshold = topk_values.max()
 
             mask = default_mask.clone()
 
-            mask[t <= threshold] = 0
-
-            PruneByKL.mask1 = mask
+            mask[topk_ind] = 0
 
             if self.is_rho:
-                PruneByKL.mask2 = mask
-                #mask[mask == 0 ] = torch.inf
+
+                mask[mask == 0 ] = torch.inf
                 
             return mask
 
@@ -287,9 +278,15 @@ class BaysianPruning():
 
 
     def check_rho_zeros(self, all_rho):
-        for x, name in all_rho:
-            if torch.max(x.get_parameter(name)).item() > 0:
-                raise ValueError(f'There is a postive rho found: {torch.max(x.get_parameter(name)).item()}')
+
+        for module, name in all_rho:
+            #print(model.)
+            try:
+                if torch.max(module.get_parameter(name)).item() > 0:
+                    raise ValueError(f'There is a postive rho found: {torch.max(module.get_parameter(name)).item()}')
+            except:
+                for name, param in module.named_parameters():
+                    print(name)
             
 
     def collect_all_parameters(self, collect_by: str):
@@ -320,12 +317,12 @@ class BaysianPruning():
             case _:
                 raise ValueError(f'Invalid collection type of {collect_by}')
             
-        all_mu.clear()
-        all_mu.append((self.model.fc1, 'mu_weight'))
+        # all_mu.clear()
+        # all_mu.append((self.model.fc1, 'mu_weight'))
 
-        all_rho.clear()
-        all_rho.append((self.model.fc1, 'rho_weight'))
-        print(all_mu, all_rho)
+        # all_rho.clear()
+        # all_rho.append((self.model.fc1, 'rho_weight'))
+        # print(all_mu, all_rho)
         return all_mu, all_rho
         
 
@@ -458,7 +455,21 @@ class BaysianPruning():
             is_rho = True)   
 
 
+# class PruneGlobal():
+#     def __init__(self) -> None:
+#         pass
+#     @classmethod
+#     def corroberate_params(mu_list, rho_list):
+#         for mu_param in mu_list:
+
+
+
+
 model = torch.load('model_90_BNN.path')
+
+#model = BNN(in_channels=3, in_feat= 32*32*3, out_feat= 10)
+
+model.to('mps')
 
 pruner = BaysianPruning(model)
 
@@ -468,11 +479,11 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 
 #pruner.global_rho_prune(0.50)
 
-pruner.global_both_by_mu_prune(0.90)
+pruner.global_both_by_mu_prune(0.50)
 
 #pruner.global_both_by_rho_prune(0.9)
 
-#pruner.global_hyper_both_prune(0.5, mu_weight=7.0)
+#pruner.global_hyper_both_prune(0.5, mu_weight=0.7)
 
 #pruner.global_kl_prune(0.5)
 
@@ -483,8 +494,9 @@ print(model.fc1.rho_weight_mask)
 x = torch.eq(model.fc1.mu_weight_mask, model.fc1.rho_weight_mask)
 
 print(torch.equal(model.fc1.mu_weight_mask, model.fc1.rho_weight_mask))
-print(torch.flatten(x).count_nonzero())
-print(torch.flatten(x).numel())
+print('% Same:', torch.flatten(x).count_nonzero() / torch.flatten(x).numel())
+
+print('values_where_mask_is_zero' , model.fc1.mu_weight_mask[x == 0])
 
 # print('fc2')
 # print(model.fc2.mu_weight_mask)
