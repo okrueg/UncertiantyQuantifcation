@@ -6,7 +6,7 @@ import numpy as np
 
 
 class BNN(nn.Module):
-    def __init__(self, in_channels, in_feat, out_feat):
+    def __init__(self, in_channels):
         super(BNN, self).__init__()
 
         self.conv1 = Conv2dReparameterization(in_channels, out_channels=32, kernel_size=3)
@@ -17,9 +17,9 @@ class BNN(nn.Module):
 
         self.flatten = nn.Flatten()
 
-        self.fc1 = LinearReparameterization(12544, 2048)
+        self.fc1 = LinearReparameterization(12544, 10)
 
-        self.fc2 = LinearReparameterization(2048, 10)
+        self.fc2 = LinearReparameterization(10, 10)
 
         self.activation= torch.nn.LeakyReLU()
 
@@ -36,7 +36,6 @@ class BNN(nn.Module):
         x = self.pool(x)
         #print(x.shape)
 
-
         x = self.flatten(x)
         
         x, kl = self.fc1(x)
@@ -45,7 +44,7 @@ class BNN(nn.Module):
 
         x, kl = self.fc2(x)
         kl_sum += kl
-
+        
         #output = x
 
         output = F.log_softmax(x, dim=1)

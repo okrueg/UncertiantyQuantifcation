@@ -21,6 +21,9 @@ class ActivationLoss(torch.nn.CrossEntropyLoss):
     
     def forward(self, input: torch.Tensor, target: torch.Tensor, activations: torch.Tensor) -> torch.Tensor:
 
+        if activations is None:
+            return super().forward(input, target)
+
         #activation_norm = torch.sqrt(torch.sum(torch.square(activations)))
         activation_norm = torch.norm(activations, p=2)
         #print(activation_norm)
@@ -33,8 +36,7 @@ def train_fas_mnist(model: BasicCNN,
                     test_loader: DataLoader,
                     num_epochs: int,
                     activation_gamma: float,
-                    lr = 0.025,
-                    #lr = 0.0125,
+                    lr: float,
                     save = False,
                     save_mode = 'loss',
                     verbose = True):
@@ -47,9 +49,11 @@ def train_fas_mnist(model: BasicCNN,
     #loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
     loss_fn = ActivationLoss(gamma=activation_gamma, label_smoothing=0.1)
 
-    optimizer = SGD(model.parameters(), lr=lr, momentum= 0.95)#, weight_decay= 0.001) # , nesterov= True
-    #scheduler = ExponentialLR(optimizer,0.90)
-    scheduler = StepLR(optimizer, step_size=4, gamma=0.90)
+    #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum= 0.9)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 7, gamma=0.90)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40, 80], gamma=0.2)
 
     best_val_loss = np.inf
     best_test_acc = -1 * np.inf
@@ -87,16 +91,17 @@ def train_fas_mnist(model: BasicCNN,
             
             optimizer.zero_grad()
             #----Run pre-forward pass to collect output for dropout----
-            if hasattr(model.dropout, "weight_matrix"):
-                with torch.no_grad():
-                    model.eval()
-                    first_output, _ = model(x)
+            if hasattr(model, "dropout"):
+                if hasattr(model.dropout, "weight_matrix"):
+                    with torch.no_grad():
+                        model.eval()
+                        first_output, _ = model(x)
 
-                model.dropout.weight_matrix = model.fc3.weight
-                model.dropout.prev_output = first_output
+                    model.dropout.weight_matrix = model.fc3.weight
+                    model.dropout.prev_output = first_output
 
-                # BUG Test
-                #print((model.dropout.weight_matrix).var(dim=0).shape, model.dropout.weight_matrix.shape )
+                    # BUG Test
+                    #print((model.dropout.weight_matrix).var(dim=0).shape, model.dropout.weight_matrix.shape )
 
             model.train()
 
@@ -136,14 +141,15 @@ def train_fas_mnist(model: BasicCNN,
 
 
         #print(model.dropout.drop_percent)
-        if hasattr(model.dropout, "drop_handeler") and model.dropout.drop_handeler is not None:
+        if hasattr(model, "dropout"):
+            if hasattr(model.dropout, "drop_handeler") and model.dropout.drop_handeler is not None:
 
-            # BUG TESTING
-            count_tensor = (model.dropout.drop_handeler.batch_info["selected_weight_indexs"] == model.dropout.drop_handeler.batch_info["labels"].unsqueeze(2)).sum(dim=2)
-            print("Epoch mean: ", torch.mean(count_tensor.to(torch.float), dim=1)) if verbose else None
+                # BUG TESTING
+                count_tensor = (model.dropout.drop_handeler.batch_info["selected_weight_indexs"] == model.dropout.drop_handeler.batch_info["labels"].unsqueeze(2)).sum(dim=2)
+                print("Epoch mean: ", torch.mean(count_tensor.to(torch.float), dim=1)) if verbose else None
 
-            #print(model.dropout.drop_handeler)
-            model.dropout.drop_handeler.add_epoch()
+                #print(model.dropout.drop_handeler)
+                model.dropout.drop_handeler.add_epoch()
 
         #---- VALIDATION -----
         model.eval()
@@ -192,9 +198,9 @@ def train_fas_mnist(model: BasicCNN,
             print()
             print(f'Testing Loss:    {test_loss:.4f} | Testing Accuracy:   {test_acc:.4f}')
             print()
-
-            save_name = f'model_{num_epochs}_isreg_{model.use_reg_dropout}_useAct_{model.use_activations}_original_method_{model.originalMethod}.path'
+        save_name = ""
         if save:
+            save_name = f'model_{num_epochs}_isreg_{model.use_reg_dropout}_useAct_{model.use_activations}_original_method_{model.originalMethod}.path'
             if save_mode == 'loss':
                 if  overall_val_loss < best_val_loss:
                     print(f"Saving new best validation loss: {overall_val_loss:.4f} < {best_val_loss:.4f}") if verbose else None
@@ -232,13 +238,13 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
         for batch_idx, (x, y) in enumerate(test_loader):
             x = x.to(DEVICE)
             y = y.to(DEVICE)
-
-            if hasattr(model.dropout, "weight_matrix"):
-                with torch.no_grad():
-                    model.eval()
-                    first_output, _ = model(x)
-                model.dropout.weight_matrix = model.fc3.weight
-                model.dropout.prev_output = first_output
+            if hasattr(model, "dropout"):
+                if hasattr(model.dropout, "weight_matrix"):
+                    with torch.no_grad():
+                        model.eval()
+                        first_output, _ = model(x)
+                    model.dropout.weight_matrix = model.fc3.weight
+                    model.dropout.prev_output = first_output
 
             if evaluate:
                 model.eval()
@@ -264,7 +270,7 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
                 label_acc[label].append(acc[ind].item())
 
         #---- Final calculation for returned Values ----
-        all_acts = torch.mean(torch.stack(activations_), dim=0)
+        #all_acts = torch.mean(torch.stack(activations_), dim=0)
 
         #---- Correlations
         # corr = feature_correlation(all_acts)

@@ -156,6 +156,54 @@ class BasicCNN(nn.Module):
         return w * (desired / (self._eps + norm))
 
 
+
+
+
+
+class FromBayesCNN(nn.Module):
+    '''
+    a the deterministec version of the bays arch
+    '''
+    def __init__(self, num_classes: int, in_channels: int,  out_feature_size: int):
+        super(FromBayesCNN, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3)
+
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
+
+        self.pool = nn.MaxPool2d(kernel_size=2)
+
+        self.flatten = nn.Flatten()
+
+        self.fc1 = nn.Linear(12544, 2048)
+
+        self.fc2 = nn.Linear(2048, 10)
+
+        self.activation = nn.LeakyReLU()
+
+    def forward(self, x: torch.Tensor, y=None):
+        '''
+        forwards through model
+        '''
+        assert x.isnan().any().item() is False
+
+        x = self.activation(self.conv1(x))
+
+        x = self.activation(self.conv2(x))
+
+        x = self.pool(x)
+
+        x = self.flatten(x)
+
+        x = self.activation(self.fc1(x))
+
+        x = self.fc2(x)
+
+        return x, None
+
+
+
+
+
 class ConfusionDropout(nn.Module):
     '''
     A special form of dropout to challenge the model by causing class confusion

@@ -4,19 +4,19 @@ from torch.utils.data import DataLoader
 import numpy as np
 from bayesArchetectures import BNN
 from tqdm import tqdm
-from torch.nn.utils import prune
+
 
 from datasets import loadData
 
-DEVICE = 'mps'
+DEVICE = 'mps' if torch.backends.mps.is_available() else 'cpu'
 
 def train_Bayes(model: BNN,
                     train_loader: DataLoader,
                     test_loader: DataLoader,
                     num_epochs: int,
                     num_mc: int,
-                    #lr = 0.0001,
-                    lr = 0.015,
+                    temperature: float,
+                    lr: float,
                     save = False,
                     save_mode = 'loss',
                     verbose = True):
@@ -28,14 +28,15 @@ def train_Bayes(model: BNN,
 
     loss_fn = torch.nn.NLLLoss() #label_smoothing=0.1
 
+
     #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum= 0.9)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 7, gamma=0.90)
+    #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 7, gamma=0.90)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40, 80], gamma=0.2)
 
     best_test_acc = -1 * np.inf
 
-    best_model = deepcopy(model)
     train_losses = []
     val_losses = []
 
@@ -100,7 +101,7 @@ def train_Bayes(model: BNN,
             scaled_kl = kl / x.shape[0]
 
             #ELBO loss
-            loss = cross_entropy_loss + 0.5 * scaled_kl
+            loss = cross_entropy_loss + temperature * scaled_kl
 
             overall_training_loss += loss.item()
 
@@ -166,8 +167,7 @@ def train_Bayes(model: BNN,
         train_output_scalar= torch.mean(train_output_scalar)
 
         scheduler.step()
-        # if epoch > 2:
-        #     prune_bayes(model=model)
+
 
         if verbose:
             print(f'Learning Rate: {scheduler.get_last_lr()[0]:.4f}')
@@ -274,21 +274,6 @@ def test_Bayes(model: BNN, test_loader: DataLoader, num_mc: int, evaluate= True,
 
     return overall_test_loss, total_acc, label_acc
 
-
-def prune_bayes(model: BNN):
-    
-
-    prune.global_unstructured(
-    ((model.fc2, 'mu_weight'), (model.fc2, 'rho_weight')),
-    pruning_method=prune.L1Unstructured,
-    amount=0.2,)
-
-    print(
-    "Number Of Zeroed Means: {:.2f}%".format(
-        100. * float(torch.sum(model.fc2.mu_weight == 0))
-        / float(model.fc2.mu_weight.nelement())
-        )
-    )
 
 #------- TEST the MODEL PROCESSCESS ------
 # train_loader,val_loader,test_loader = loadData('CIFAR-10',batch_size= 200)
