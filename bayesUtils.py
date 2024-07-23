@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from datasets import loadData
 
-DEVICE = 'mps'
+DEVICE = 'mps' if torch.backends.mps.is_available() else 'cpu'
 
 def train_Bayes(model: BNN,
                     train_loader: DataLoader,

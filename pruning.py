@@ -1,213 +1,124 @@
 import torch
+import numpy as np
 from torch.nn.utils import prune
+import plotly.express as px
 from bayesArchetectures import BNN
 import bayesUtils
 from datasets import loadData
 
-class PruneByMU(prune.BasePruningMethod):
-    PRUNING_TYPE = 'unstructured'
+DEVICE = 'mps' if torch.backends.mps.is_available() else 'cpu'
 
-    mu_mask = torch.empty(0)
+class PruneByMU():
+    def __init__(self):
+        pass
+
+    def __call__(self, amount, mu_tensor, rho_tensor):
+        return self.calc_threshhold(amount, mu_tensor, rho_tensor)
 
 
-    def __init__(self, amount: float):
-        super().__init__()
-        self.amount = amount
+    def get_scores(self, mu_tensor: torch.Tensor, rho_tensor: torch.Tensor) -> torch.Tensor:
 
-    def compute_mask(self, t, default_mask):
+        return torch.abs(mu_tensor)
 
-        # For Second global pass provide the rho mask
-        if PruneByMU.mu_mask.nelement() > 0:
 
-            rho_mask = PruneByMU.mu_mask.clone()
+    def calc_threshhold(self, amount: float, mu_tensor: torch.Tensor, rho_tensor: torch.Tensor) -> int:
+
+        abs_score = self.get_scores(mu_tensor, None)
+
+        num_elements = mu_tensor.numel()
         
-            # rho_mask[PruneByMU.mu_mask == 0] = torch.inf
-
-            # values_not = rho_mask[(rho_mask == torch.inf)]
-
-            # rho_mask[rho_mask == torch.inf] = 0
-            
-            # print('vals', values_not.numel()/rho_mask.numel())
-
-            return rho_mask
+        num_prune = int(amount * num_elements)
         
-        else:
+        topk_values, _ = torch.topk(abs_score.view(-1), num_prune, largest=False)
 
-            # Get the L1  of the weights
-            t = t.abs()
+        threshold = topk_values.max()
 
-            num_elements = t.numel()
-            num_prune = int(self.amount * num_elements)
-            
-            _, topk_indicies = torch.topk(t, num_prune, largest=False)
+        return threshold
 
-            mask = default_mask.clone()
 
-            mask[topk_indicies] = 0
+class PruneByRho():
+    def __init__(self):
+        pass
 
-            #mask.to('mps')
+    def __call__(self, amount, mu_tensor, rho_tensor):
+        return self.calc_threshhold(amount, mu_tensor, rho_tensor)
 
-            #mask = torch.arange(t.numel(), device= 'mps')
 
-            #mask = torch.rand_like(t)
+    def get_scores(self, mu_tensor: torch.Tensor, rho_tensor: torch.Tensor) -> torch.Tensor:
 
-            PruneByMU.mu_mask = mask.clone()
-            
-            return PruneByMU.mu_mask
+        return rho_tensor
 
-    
-    def apply(self, module, name ):
-        print('called')
 
-        mask = self.compute_mask(module.get_parameter(name), default_mask=None)
+    def calc_threshhold(self, amount: float, mu_tensor: torch.Tensor, rho_tensor: torch.Tensor) -> int:
 
-        rho_mask = mask
+
+        num_elements = rho_tensor.numel()
         
-        rho_mask[rho_mask == 0] = -1 * torch.inf
-
-        print(rho_mask)
-
-        if name == 'mu_weight':
-            if hasattr(module, 'rho_weight'):
-
-                # Apply masks
-                prune.custom_from_mask(module, name='mu_weight', mask=mask)
-
-                prune.custom_from_mask(module, name='rho_weight', mask=rho_mask)
-
-            else:
-                raise Exception
-
-
-        if name == 'mu_kernel':
-            if hasattr(module, 'rho_kernel'):
-
-                # Apply masks
-                prune.custom_from_mask(module, name='mu_kernel', mask=mask)
-
-                prune.custom_from_mask(module, name='rho_kernel', mask=rho_mask)
-            else:
-                raise Exception
-
-
-class PruneByRho(prune.BasePruningMethod):
-    PRUNING_TYPE = 'unstructured'
-
-    rho_mask = torch.empty(0)
-
-    def __init__(self, amount: float):
-        super().__init__()
-        self.amount = amount
-
-    def compute_mask(self, t, default_mask):
-
-        # For Second global pass provide the mu mask
-        if PruneByRho.rho_mask.nelement() > 0:
-
-            mu_mask = PruneByRho.rho_mask
+        num_prune = int(amount * num_elements)
         
-            mu_mask[mu_mask == torch.inf] = 0
-
-            PruneByRho.rho_mask = torch.empty(0)
-
-            return mu_mask
-
-        # Get the L1  of the rho weights
-        num_elements = t.numel()
-        num_prune = int(self.amount * num_elements)
-        
-        topk_values, _ = torch.topk(t.view(-1), num_prune, largest=True)
+        topk_values, _ = torch.topk(rho_tensor.view(-1), num_prune, largest=True)
 
         threshold = topk_values.min()
 
-        mask = default_mask.clone()
-
-        mask[t >= threshold] =  torch.inf
-
-        PruneByRho.rho_mask = mask
-
-        return mask
+        return threshold
 
 
-class PruneByHyper(prune.BasePruningMethod):
-    PRUNING_TYPE = 'unstructured'
-    mu_scores = torch.empty(0)
-
-    mask = torch.empty(0)
+class PruneByHyper():
 
     @staticmethod
     def minMaxNorm(t):
 
-        min = torch.min(t)
-        max = torch.max(t)
+        minimum = torch.min(t)
+        maximum = torch.max(t)
 
-        return (t - min) / (max - min)
-    
+        return (t - minimum) / (maximum - minimum)
 
-    def __init__(self, amount: float, mu_weight: float, isRho = False):
+
+    def __init__(self, mu_weight= 0.75):
         super().__init__()
-        self.amount = amount
+        #Check To see if mu weight is valid
+        assert (mu_weight <= 1 and mu_weight >= 0)
+        print(f'mu_weight: {mu_weight}')
+
         self.mu_weight = mu_weight
-        self.isRho = isRho
-
-    def compute_mask(self, t, default_mask):
-
-        if PruneByHyper.mu_scores.nelement() == 0:
 
 
-            t = torch.abs(t)
+    def __call__(self, amount, mu_tensor, rho_tensor):
+        return self.calc_threshhold(amount, mu_tensor, rho_tensor)
 
-            mu_norm = PruneByHyper.minMaxNorm(t)
 
-            mu_norm *= self.mu_weight
+    def get_scores(self, mu_tensor: torch.Tensor, rho_tensor: torch.Tensor):
+        mu_abs = torch.abs(mu_tensor)
 
-            PruneByHyper.mu_scores = mu_norm
+        mu_norm = PruneByHyper.minMaxNorm(mu_abs)
 
-            return default_mask
+        mu_scores = mu_norm * self.mu_weight
+
+        rho_norm = PruneByHyper.minMaxNorm(rho_tensor)
+
+        rho_scores = 1 - (rho_norm * (1- self.mu_weight))
+
+        scores = mu_scores + rho_scores
+
+        return scores
+
+
+    def calc_threshhold(self, amount: float, mu_tensor: torch.Tensor, rho_tensor: torch.Tensor) -> int:
+
+        hyper_scores = self.get_scores(mu_tensor, rho_tensor)
+
+        num_elements = mu_tensor.numel()
         
-        elif PruneByHyper.mask.nelement() == 0:
+        num_prune = int(amount * num_elements)
+        
+        topk_values, _ = torch.topk(hyper_scores, num_prune, largest=False)
 
-            rho_norm = PruneByHyper.minMaxNorm(t)
+        threshold = topk_values.max()
 
-            rho_norm = 1 - (rho_norm * (1- self.mu_weight))
-
-            scores = PruneByHyper.mu_scores + rho_norm
-
-            num_elements = t.numel()
-            num_prune = int(self.amount * num_elements)
-
-            mask = default_mask.clone()
-            
-            topk_values, _ = torch.topk(scores, num_prune, largest=False)
-
-            threshold = topk_values.max()
-
-            mask[scores <= threshold] = 0
-
-            PruneByHyper.mask = mask
-
-            return default_mask
-        else:
-            
-            mask = PruneByHyper.mask.clone()
-
-            if self.isRho:
-                mask[mask == 0 ] = torch.inf
-
-            return mask
+        return threshold
 
 
-class PruneByKL(prune.BasePruningMethod):
-    PRUNING_TYPE = 'unstructured'
-
-    mu_tensor = torch.empty(0)
-    rho_tensor = torch.empty(0)
-
-
-    mask = torch.empty(0)
-
-    mask1 = torch.empty(0)
-    mask2 = torch.empty(0)
+class PruneByKL():
 
     @staticmethod
     def indv_kl(mu_q, sigma_q, mu_p, sigma_p):
@@ -218,58 +129,46 @@ class PruneByKL(prune.BasePruningMethod):
             sigma_q) + (sigma_q**2 + (mu_q - mu_p)**2) / (2 *
                                                           (sigma_p**2)) - 0.5
         return kl
-    
+
+
     @staticmethod
     def sigma_calc(rho_tensor):
         return torch.log1p(torch.exp(rho_tensor))
 
-    def __init__(self, amount: float, is_rho = False):
-        super().__init__()
+
+    def __init__(self):
+        pass
+
+
+    def __call__(self, amount, mu_tensor, rho_tensor):
+        return self.calc_threshhold(amount, mu_tensor, rho_tensor)
+
+
+    def get_scores(self, mu_tensor: torch.Tensor, rho_tensor: torch.Tensor) -> torch.Tensor:
+        sigma_tensor = PruneByKL.sigma_calc(rho_tensor)
+
+        mu_prior = torch.zeros_like(mu_tensor)
+
+        sigma_prior = torch.ones_like(rho_tensor)
+
+        kl_scores = PruneByKL.indv_kl(mu_tensor, sigma_tensor, mu_prior, sigma_prior )
+
+        return kl_scores
+
+
+    def calc_threshhold(self, amount: float, mu_tensor: torch.Tensor, rho_tensor: torch.Tensor) -> int:
+
+        kl_scores = self.get_scores(mu_tensor, rho_tensor)
+
+        num_elements = mu_tensor.numel()
         
-        self.amount = amount
-        self.is_rho = is_rho
-
-
-    def compute_mask(self, t, default_mask):
-
-        if PruneByKL.mu_tensor.nelement() == 0:
-
-            PruneByKL.mu_tensor = t
-
-            return default_mask
-
-
-        elif PruneByKL.rho_tensor.nelement() == 0:
-
-            PruneByKL.rho_tensor = t
-
-            return default_mask
+        num_prune = int(amount * num_elements)
         
-        else:
-            sigma_tensor = PruneByKL.sigma_calc(PruneByKL.rho_tensor)
+        topk_values, _ = torch.topk(kl_scores, num_prune, largest=False)
 
-            mu_prior = torch.ones_like(PruneByKL.mu_tensor)
+        threshold = topk_values.max()
 
-            sigma_prior = PruneByKL.sigma_calc(-3 * torch.ones_like(PruneByKL.rho_tensor))
-
-            kl_scores = PruneByKL.indv_kl(PruneByKL.mu_tensor, sigma_tensor, mu_prior, sigma_prior )
-
-            num_elements = t.numel()
-            num_prune = int(self.amount * num_elements)
-            
-            topk_values, topk_ind = torch.topk(kl_scores.view(-1), num_prune, largest=False)
-
-            threshold = topk_values.max()
-
-            mask = default_mask.clone()
-
-            mask[topk_ind] = 0
-
-            if self.is_rho:
-
-                mask[mask == 0 ] = torch.inf
-                
-            return mask
+        return threshold
 
 
 class BaysianPruning():
@@ -316,7 +215,8 @@ class BaysianPruning():
             
             case _:
                 raise ValueError(f'Invalid collection type of {collect_by}')
-            
+
+    # Test collecting just 1 layers  
         # all_mu.clear()
         # all_mu.append((self.model.fc1, 'mu_weight'))
 
@@ -344,123 +244,141 @@ class BaysianPruning():
             pruning_method=prune.L1Unstructured,
             amount=amount)
         return
+
+
+class GlobalUnstructuredPrune():
+
+    class ThreshholdPrune(prune.BasePruningMethod):
+        PRUNING_TYPE = 'unstructured'
+
+        @classmethod
+        def apply(cls, module, name: str, is_rho: bool, symbol_flip: bool, threshhold: int, scores: torch.Tensor | None):
+            super().apply(module, name, importance_scores= None, is_rho=is_rho, symbol_flip=symbol_flip, threshhold=threshhold, scores=scores)
+
+
+
+        def __init__(self, is_rho:bool, symbol_flip: bool, threshhold:int, scores: torch.Tensor | None):
+            super().__init__()
+
+            self.is_rho = is_rho
+            self.symbol_flip = symbol_flip
+            self.threshhold = threshhold
+            self.scores = scores
+
+
+        def compute_mask(self, t, default_mask):
+
+            self.scores = t if self.scores is None else self.scores
+            mask = default_mask.clone()
+            # Filter Large Variences for prune by Rho
+            if self.symbol_flip:
+                if self.is_rho:
+                    mask[self.scores >= self.threshhold] = torch.inf
+                else:
+                    mask[self.scores >= self.threshhold] = 0
+            # For all other Cases
+            else:
+                if self.is_rho:
+                    mask[self.scores <= self.threshhold] = torch.inf
+                else:
+                    mask[self.scores <= self.threshhold] = 0
+
+            return mask
     
-    
-    def global_both_by_mu_prune(self, amount: float):
 
-        all_mu, all_rho = self.collect_all_parameters('mu')
+    def __init__(self, amount: float, pruner: BaysianPruning, method, **kwargs) -> None:
+        assert (amount <= 1 and amount >= 0), "Prune range must be [0,1]"
 
-        self.check_rho_zeros(all_rho)
+        self.amount = amount
 
-        method = PruneByMU
+        self.mu_list, self.rho_list = pruner.collect_all_parameters('mu')
 
-        prune.global_unstructured(
-            all_mu,
-            pruning_method=method,
-            amount=amount)
-    
-        prune.global_unstructured(
-            all_rho,
-            pruning_method=method,
-            amount=amount)
+        self.method = method(**kwargs)
+
+        self.threshhold = 0
 
 
-    def global_both_by_rho_prune(self, amount: float):
+    def collect_theshhold(self,):
 
-        all_mu, all_rho = self.collect_all_parameters('rho')
+        assert hasattr(self.method, 'calc_threshhold')
+
+        mu_params_list = [ getattr(mu_param, name) for mu_param, name in self.mu_list]
+
+        rho_params_list = [ getattr(rho_param, name) for rho_param, name in self.rho_list]
+
+        mu_vector = torch.nn.utils.parameters_to_vector(mu_params_list)
+
+        rho_vector = torch.nn.utils.parameters_to_vector(rho_params_list)
+
+        self.threshhold = self.method(self.amount, mu_vector, rho_vector)
+
+    def apply_to_params(self):
+        print(f'Utilizing a threshhold of {self.threshhold} from {type(self.method).__name__}')
+
+        for (module, mu_name), (_, rho_name) in zip(self.mu_list, self.rho_list):
+            # Sanity Check, Should never trigger o_0
+            assert module == _
+
+            # Create Scores for threshhold, else just feed in mu
+            if hasattr(self.method, 'get_scores'):
+                scores = self.method.get_scores(module.get_parameter(mu_name), module.get_parameter(rho_name))
+            else:
+                scores = None
+
+            symbol_flip = True if type(self.method).__name__ == 'PruneByRho' else False
                 
-        self.check_rho_zeros(all_rho)
-        
-        method = PruneByRho
-
-        prune.global_unstructured(
-            all_rho,
-            pruning_method=method,
-            amount=amount)
-        
-        prune.global_unstructured(
-            all_mu,
-            pruning_method=method,
-            amount=amount)
-    
+            GlobalUnstructuredPrune.ThreshholdPrune.apply(module, mu_name, False, symbol_flip, self.threshhold, scores)
+            GlobalUnstructuredPrune.ThreshholdPrune.apply(module, rho_name, True, symbol_flip, self.threshhold, scores)
 
 
-    def global_hyper_both_prune(self, amount: float, mu_weight: float):
-        all_mu, all_rho = self.collect_all_parameters('mu')
+def accuracyByPrune(prune_intervals:list, prune_method_list:list, test_loader, num_mc:int , model_path = None):
+    x = np.array(prune_intervals)
 
-        self.check_rho_zeros(all_rho)
+    # Run Results for Just MU
+    just_mus = []
+    for interval in prune_intervals:
+            model = torch.load(model_path) if model_path is not None else BNN(3)
+            model.to(DEVICE)
 
-        method = PruneByHyper
+            pruner = BaysianPruning(model)
+            
+            pruner.global_just_mu_prune(interval)
 
-        # Collect the scores (Just applies a default Mask)
+            _, accuracy, _ = bayesUtils.test_Bayes(model, test_loader, num_mc=10)
 
-        prune.global_unstructured(
-            all_mu,
-            pruning_method=method,
-            amount=amount,
-            mu_weight = mu_weight)
-        
-        prune.global_unstructured(
-            all_rho,
-            pruning_method=method,
-            amount=amount,
-            mu_weight = mu_weight)
-        
-        # Second pass actually applies the scores
-        
-        prune.global_unstructured(
-            all_mu,
-            pruning_method=method,
-            amount=amount,
-            mu_weight = mu_weight)
-        
-        prune.global_unstructured(
-            all_rho,
-            pruning_method=method,
-            amount=amount,
-            mu_weight = mu_weight,
-            isRho = True)   
- 
+            just_mus.append(accuracy)
 
-    def global_kl_prune(self, amount: float):
-        all_mu, all_rho = self.collect_all_parameters('mu')
+    fig = px.line(x=x, y=just_mus, template='plotly_dark')#, range_y=[0.5,1])
+    # Cant add name trace ugh
+    #'''
+    for method in prune_method_list:
+        method_accuracys = []
+        for interval in prune_intervals:
+            model = torch.load(model_path) if model_path is not None else BNN(3)
+            model.to(DEVICE)
 
-        self.check_rho_zeros(all_rho)
+            pruner = BaysianPruning(model)
 
-        method = PruneByKL
+            glob = GlobalUnstructuredPrune(interval, pruner, method)
 
-        # Collect the scores (Just applies a default Mask)
+            glob.collect_theshhold()
 
-        prune.global_unstructured(
-            all_mu,
-            pruning_method=method,
-            amount=amount)
-        
-        prune.global_unstructured(
-            all_rho,
-            pruning_method=method,
-            amount=amount)
-        
-        # Second pass actually applies the scores
-        
-        prune.global_unstructured(
-            all_mu,
-            pruning_method=method,
-            amount=amount)
-        
-        prune.global_unstructured(
-            all_rho,
-            pruning_method=method,
-            amount=amount,
-            is_rho = True)   
+            glob.apply_to_params()
+
+            _, accuracy, _ = bayesUtils.test_Bayes(model, test_loader, num_mc=10)
+
+            method_accuracys.append(accuracy)
 
 
-# class PruneGlobal():
-#     def __init__(self) -> None:
-#         pass
-#     @classmethod
-#     def corroberate_params(mu_list, rho_list):
-#         for mu_param in mu_list:
+        fig.add_scatter(x=x, y= method_accuracys, mode='lines')
+        fig.data[-1].name = method.__name__
+    #'''
+    fig.update_layout(
+                    showlegend=True,
+                    xaxis_title="Prune Rate",
+                    yaxis_title="Accuracy"
+                    )
+    fig.show()
 
 
 
@@ -469,43 +387,41 @@ model = torch.load('model_90_BNN.path')
 
 #model = BNN(in_channels=3, in_feat= 32*32*3, out_feat= 10)
 
-model.to('mps')
+model.to(DEVICE)
 
-pruner = BaysianPruning(model)
+model_parameters = filter(lambda p: p.requires_grad, model.parameters())
+params = sum([np.prod(p.size()) for p in model_parameters])
+print(params)
 
-train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
+# pruner = BaysianPruning(model)
+
+# glob = GlobalUnstructuredPrune(0.5, pruner, PruneByMU)
+
+# glob.collect_theshhold()
+
+# glob.apply_to_params()
+
+
 
 #pruner.global_mu_prune(0.90)
 
 #pruner.global_rho_prune(0.50)
 
-pruner.global_both_by_mu_prune(0.50)
-
-#pruner.global_both_by_rho_prune(0.9)
-
-#pruner.global_hyper_both_prune(0.5, mu_weight=0.7)
-
-#pruner.global_kl_prune(0.5)
-
-print(model.fc1.mu_weight_mask)
-print()
-print(model.fc1.rho_weight_mask)
-
-x = torch.eq(model.fc1.mu_weight_mask, model.fc1.rho_weight_mask)
-
-print(torch.equal(model.fc1.mu_weight_mask, model.fc1.rho_weight_mask))
-print('% Same:', torch.flatten(x).count_nonzero() / torch.flatten(x).numel())
-
-print('values_where_mask_is_zero' , model.fc1.mu_weight_mask[x == 0])
-
-# print('fc2')
-# print(model.fc2.mu_weight_mask)
+#-------- Test masks are the same-------
+# print(model.fc1.mu_weight_mask)
 # print()
-# print(model.fc2.rho_weight_mask)
+# print(model.fc1.rho_weight_mask)
 
+# x = torch.eq(model.fc1.mu_weight_mask, model.fc1.rho_weight_mask)
 
-# x = model.fc1
-# sigma_weight = PruneByKL.sigma_calc(x.rho_weight)
-# y = PruneByKL.indv_kl(x.mu_weight, sigma_weight, x.prior_weight_mu, x.prior_weight_sigma)
-# print(y.shape)
-bayesUtils.test_Bayes(model, test_loader, num_mc=10)
+# print(torch.equal(model.fc1.mu_weight_mask, model.fc1.rho_weight_mask))
+# print('% Same:', torch.flatten(x).count_nonzero() / torch.flatten(x).numel())
+
+# print('values_where_mask_is_zero' , model.fc1.mu_weight_mask[x == 0])
+#---------------------------------------
+
+train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
+# bayesUtils.test_Bayes(model, test_loader, num_mc=10)
+
+#accuracyByPrune([0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 0.9],[PruneByMU, PruneByRho, PruneByHyper, PruneByKL], test_loader=test_loader, num_mc=10, model_path='model_90_BNN.path')
+#accuracyByPrune([0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 0.9],[PruneByHyper], test_loader=test_loader, num_mc=1, model_path='model_90_BNN.path')
