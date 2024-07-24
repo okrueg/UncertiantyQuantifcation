@@ -105,7 +105,9 @@ def train_fas_mnist(model: BasicCNN,
 
             model.train()
 
-            train_output, activations = model(x,y)
+            train_output = model(x,y)
+
+            activations = model.activations
 
             loss = loss_fn(train_output, y, activations)
 
@@ -200,7 +202,10 @@ def train_fas_mnist(model: BasicCNN,
             print()
         save_name = ""
         if save:
-            save_name = f'model_{num_epochs}_isreg_{model.use_reg_dropout}_useAct_{model.use_activations}_original_method_{model.originalMethod}.path'
+            if type(model).__name__ == "BasicCNN":
+                save_name = f'model_{num_epochs}_isreg_{model.use_reg_dropout}_useAct_{model.use_activations}_original_method_{model.originalMethod}.path'
+            else:
+                save_name = f'other_model_{num_epochs}.path'
             if save_mode == 'loss':
                 if  overall_val_loss < best_val_loss:
                     print(f"Saving new best validation loss: {overall_val_loss:.4f} < {best_val_loss:.4f}") if verbose else None
@@ -251,9 +256,8 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
             else:
                 model.train()
 
-            test_output, activation = model(x, y)
+            test_output = model(x, y)
 
-            activations_.append(activation)
 
             #----BUG TEST-----
             #print('output',torch.softmax(test_output, dim=1)[0:2])
@@ -387,6 +391,7 @@ def model_grid_training(model_params: np.ndarray,
                                                       test_loader= test_loader,
                                                       num_epochs=num_epochs,
                                                       activation_gamma= 0.001,
+                                                      lr = 0.001,
                                                       save=True,
                                                       save_mode='accuracy',
                                                       verbose=verboscity)

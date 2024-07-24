@@ -1,6 +1,7 @@
 from copy import deepcopy
 import torch
 from torch.utils.data import DataLoader
+from bayesian_torch.models.dnn_to_bnn import get_kl_loss
 import numpy as np
 from bayesArchetectures import BNN
 from tqdm import tqdm
@@ -11,15 +12,16 @@ from datasets import loadData
 DEVICE = 'mps' if torch.backends.mps.is_available() else 'cpu'
 
 def train_Bayes(model: BNN,
-                    train_loader: DataLoader,
-                    test_loader: DataLoader,
-                    num_epochs: int,
-                    num_mc: int,
-                    temperature: float,
-                    lr: float,
-                    save = False,
-                    save_mode = 'loss',
-                    verbose = True):
+                train_loader: DataLoader,
+                test_loader: DataLoader,
+                num_epochs: int,
+                num_mc: int,
+                temperature: float,
+                lr: float,
+                from_dnn = False,
+                save = False,
+                save_mode = 'loss',
+                verbose = True):
     '''
     model training sequence
     '''
@@ -84,13 +86,23 @@ def train_Bayes(model: BNN,
             # compute output
             output_ = []
             kl_ = []
-            for mc_run in range(num_mc):
 
-                output, kl = model(x, y)
+            if from_dnn:
+                for mc_run in range(num_mc):
+                    output = model(x, y)
+                    output_.append(output)
 
-                output_.append(output)
+                    kl = get_kl_loss(model)
+                    kl_.append(kl)
 
-                kl_.append(kl)
+            else:
+                for mc_run in range(num_mc):
+
+                    output, kl = model(x, y)
+
+                    output_.append(output)
+
+                    kl_.append(kl)
 
             train_output = torch.mean(torch.stack(output_), dim=0)
 
@@ -157,6 +169,7 @@ def train_Bayes(model: BNN,
         test_stats = test_Bayes(model=model,
                     test_loader=test_loader,
                     num_mc=10,
+                    from_dnn=True,
                     verbose=False)
 
         test_loss, test_acc = test_stats[0], test_stats[1]
@@ -203,7 +216,7 @@ def train_Bayes(model: BNN,
     return (train_losses, val_losses), (train_accs, test_accs), save_name
 
 
-def test_Bayes(model: BNN, test_loader: DataLoader, num_mc: int, evaluate= True, verbose = True):
+def test_Bayes(model: BNN, test_loader: DataLoader, num_mc: int, from_dnn = False, evaluate= True, verbose = True):
     '''
     model testing functionality
     '''
@@ -231,13 +244,22 @@ def test_Bayes(model: BNN, test_loader: DataLoader, num_mc: int, evaluate= True,
 
             output_ = []
             kl_ = []
-            for mc_run in range(num_mc):
+            if from_dnn:
+                for mc_run in range(num_mc):
+                    output = model(x, y)
+                    output_.append(output)
 
-                output, kl = model(x, y)
+                    kl = get_kl_loss(model)
+                    kl_.append(kl)
 
-                output_.append(output)
+            else:
+                for mc_run in range(num_mc):
 
-                kl_.append(kl)
+                    output, kl = model(x, y)
+
+                    output_.append(output)
+
+                    kl_.append(kl)
 
             test_output = torch.mean(torch.stack(output_), dim=0)
 

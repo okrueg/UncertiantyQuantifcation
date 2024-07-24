@@ -51,24 +51,50 @@ class BNN(nn.Module):
 
         return output, kl_sum
 
-class basic(nn.Module):
-    def __init__(self):
-        super(basic, self).__init__()
-        self.input_layer = nn.Linear(in_features=1, out_features=10)
+class DNN(nn.Module):
+    def __init__(self, in_channels):
+        super(DNN, self).__init__()
 
-        self.output_layer = nn.Linear(in_features=10, out_features=1)
+        self.conv1 = torch.nn.Conv2d(in_channels, out_channels=32, kernel_size=3)
+
+        self.conv2 = torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3)
+
+        self.pool = nn.MaxPool2d(kernel_size=2)
+
+        self.flatten = nn.Flatten()
+
+        self.fc1 = torch.nn.Linear(12544, 2048)
+
+        self.fc2 = torch.nn.Linear(2048, 10)
+
+        self.activation= torch.nn.LeakyReLU()
+
+        self.activations= None
+
+    def forward(self, x, y=None):
+
+        x = self.conv1(x)
+
+        x = self.activation(x)
+
+        x = self.conv2(x)
+
+        x = self.activation(x)
+
+        x = self.pool(x)
+
+        x = self.flatten(x)
         
-    def forward(self, x, y= None):
-        kl_sum = 0
-        x = self.input_layer(x)
+        x = self.fc1(x)
 
-        x = F.relu(x)
-        x = self.output_layer(x)
+        x = self.activation(x)
+
+        x = self.fc2(x)
+        #output = x
 
         output = F.log_softmax(x, dim=1)
-        #output = x
-        return output, kl_sum
 
+        return output
 
 
 # epochs = 50
