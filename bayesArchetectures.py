@@ -75,6 +75,8 @@ class DNN(nn.Module):
 
         x = self.conv1(x)
 
+        #print(x)
+
         x = self.activation(x)
 
         x = self.conv2(x)

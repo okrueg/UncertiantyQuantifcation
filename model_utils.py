@@ -11,6 +11,7 @@ import torch.utils
 from torch.utils.data import DataLoader
 from datasets import loadData
 from model_architectures import BasicCNN
+from wideresnet import WideResNet
 
 
 class ActivationLoss(torch.nn.CrossEntropyLoss):
@@ -126,7 +127,7 @@ def train_fas_mnist(model: BasicCNN,
             # print(f'Smallest gradient: {min_grad}')
             # print(f'Largest gradient: {max_grad}')
 
-            nn.utils.clip_grad_value_(model.parameters(), clip_value=0.5)
+            #nn.utils.clip_grad_value_(model.parameters(), clip_value=0.5)
 
             optimizer.step()
 
@@ -160,8 +161,8 @@ def train_fas_mnist(model: BasicCNN,
                 x = x.to(DEVICE)
                 y = y.to(DEVICE)
 
-                val_output, val_activations = model(x)
-                overall_val_loss += loss_fn(val_output, y, val_activations).item()
+                val_output = model(x,y)
+                overall_val_loss += loss_fn(val_output, y, model.activations).item()
 
                 #---- Calculate train accuracys for the Batch ----
                 predictions = torch.max(val_output, dim=1)[1]
@@ -205,7 +206,7 @@ def train_fas_mnist(model: BasicCNN,
             if type(model).__name__ == "BasicCNN":
                 save_name = f'model_{num_epochs}_isreg_{model.use_reg_dropout}_useAct_{model.use_activations}_original_method_{model.originalMethod}.path'
             else:
-                save_name = f'other_model_{num_epochs}.path'
+                save_name = f'{type(model).__name__}_{num_epochs}.path'
             if save_mode == 'loss':
                 if  overall_val_loss < best_val_loss:
                     print(f"Saving new best validation loss: {overall_val_loss:.4f} < {best_val_loss:.4f}") if verbose else None
@@ -461,3 +462,19 @@ elif torch.backends.mps.is_available():
 # print('Our Model')
 
 # print(test_survival(our_Model, test_loader=test_loader))
+
+#---------WIDE RESNET-------------
+
+# train_loader,val_loader,test_loader = loadData('CIFAR-10',batch_size= 200)
+
+# model = WideResNet(16,10,8)
+
+# _,_,model = train_fas_mnist(model=model,
+#                             train_loader=train_loader,
+#                             val_loader=val_loader,
+#                             test_loader=test_loader,
+#                             num_epochs=90,
+#                             activation_gamma=0,
+#                             lr= 0.001,
+#                             save=True,
+#                             save_mode='accuracy')

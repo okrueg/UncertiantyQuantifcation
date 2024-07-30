@@ -35,7 +35,9 @@ def train_Bayes(model: BNN,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 7, gamma=0.90)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40, 80], gamma=0.2)
+    #scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40, 80], gamma=0.2)
+
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20], gamma=0.2) # for fine tuning
 
     best_test_acc = -1 * np.inf
 
@@ -93,6 +95,7 @@ def train_Bayes(model: BNN,
                     output_.append(output)
 
                     kl = get_kl_loss(model)
+
                     kl_.append(kl)
 
             else:
@@ -111,6 +114,10 @@ def train_Bayes(model: BNN,
             cross_entropy_loss = loss_fn(train_output, y)
 
             scaled_kl = kl / x.shape[0]
+
+            # Make sure loss isnt inf
+            assert cross_entropy_loss != torch.inf
+            assert scaled_kl != torch.inf
 
             #ELBO loss
             loss = cross_entropy_loss + temperature * scaled_kl
@@ -136,9 +143,23 @@ def train_Bayes(model: BNN,
             # print(f'Smallest gradient: {min_grad}')
             # print(f'Largest gradient: {max_grad}')
 
-            # torch.nn.utils.clip_grad_value_(model.parameters(), clip_value=1)
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.1)
+
+        #-------Exploding KL loss testing ------------------
+            # for layer in model.modules():
+            #     if hasattr(layer, "kl_loss"):
+            #         sigma_weight = torch.log1p(torch.exp(layer.rho_kernel))
+            #         # print(layer.rho_kernel.min())
+            #         # print(sigma_weight.min())
+            #         # print(torch.log(sigma_weight).min())
+
+            #         kl = torch.log(layer.prior_weight_sigma) - torch.log(
+            #             sigma_weight) + (sigma_weight**2 + (layer.mu_kernel - layer.prior_weight_mu)**2) / (2 * (layer.prior_weight_sigma**2)) - 0.5
+
+            #         print(kl.mean())
 
             optimizer.step()
+
 
             # ---- Calculate train accuracys for the Batch ----
             predictions = torch.max(train_output, dim=1)[1]
@@ -169,7 +190,7 @@ def train_Bayes(model: BNN,
         test_stats = test_Bayes(model=model,
                     test_loader=test_loader,
                     num_mc=10,
-                    from_dnn=True,
+                    from_dnn=from_dnn,
                     verbose=False)
 
         test_loss, test_acc = test_stats[0], test_stats[1]
@@ -190,7 +211,7 @@ def train_Bayes(model: BNN,
             print(f'Testing Loss:    {test_loss:.4f} | Testing Accuracy:   {test_acc:.4f}')
             print()
 
-            save_name = f'model_{num_epochs}_BNN.path'
+        save_name = f'model_{num_epochs}_BNN.path'
         if save:
             if save_mode == 'loss':
                 if  test_loss < best_val_loss:
@@ -244,6 +265,7 @@ def test_Bayes(model: BNN, test_loader: DataLoader, num_mc: int, from_dnn = Fals
 
             output_ = []
             kl_ = []
+
             if from_dnn:
                 for mc_run in range(num_mc):
                     output = model(x, y)
@@ -257,10 +279,11 @@ def test_Bayes(model: BNN, test_loader: DataLoader, num_mc: int, from_dnn = Fals
 
                     output, kl = model(x, y)
 
+
                     output_.append(output)
 
                     kl_.append(kl)
-
+            #print(output_[0])
             test_output = torch.mean(torch.stack(output_), dim=0)
 
 
