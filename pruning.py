@@ -637,24 +637,24 @@ def compare_bnn_dnn(prune_intervals:list, test_loader, method, tune_epochs:int, 
 
     fig = go.Figure()
 
-    fig.add_scatter(x=x, y=orig_dnn_accs, line=dict(color='darkgreen', width=3))
+    fig.add_scatter(x=x, y=orig_dnn_accs, line=dict(color='darkgreen', width=3, dash='dash'))
     fig.data[-1].name = 'Orig DNN'
 
-    fig.add_scatter(x=x, y=from_dnn_accs, line=dict(color='darkblue', width=3))
+    fig.add_scatter(x=x, y=from_dnn_accs, line=dict(color='darkblue', width=3, dash='dash'))
     fig.data[-1].name = 'From DNN'
 
-    fig.add_scatter(x=x, y= bnn_accs, line=dict(color='darkred', width=3))
+    fig.add_scatter(x=x, y= bnn_accs, line=dict(color='darkred', width=3, dash='dash'))
     fig.data[-1].name = 'BNN'
 
     if tune_epochs > 0:
         fig.add_scatter(x=x, y=orig_dnn_tuned_accs, line=dict(color='green', width=3))
-        fig.data[-1].name = 'Orig DNN'
+        fig.data[-1].name = 'Tuned Orig DNN'
 
         fig.add_scatter(x=x, y=from_dnn_tuned_accs, line=dict(color='blue', width=3))
-        fig.data[-1].name = 'From DNN Tuned'
+        fig.data[-1].name = 'Tuned From DNN'
 
         fig.add_scatter(x=x, y= bnn_tuned_accs, line=dict(color='red', width=3))
-        fig.data[-1].name = 'BNN Tuned'
+        fig.data[-1].name = 'Tuned BNN'
 
     fig.update_layout(
                     showlegend=True,
@@ -664,10 +664,11 @@ def compare_bnn_dnn(prune_intervals:list, test_loader, method, tune_epochs:int, 
                     title = f"Orig DNN vs Raised DNN vs BNN | Method: {method.__name__} | Tuning: {tune_epochs}"
                     )
     
+    fig.write_image(f"bnn_dnn_comparison_tune{tune_epochs}.png")
     fig.show()
 
 def kl_vs_mu_rho(model:BNN|DNN):
-    pruner = BayesParamCollector(bnn)
+    pruner = BayesParamCollector(model)
 
     mu_list, rho_list = pruner.collect_weight_params('mu')
 
@@ -692,8 +693,9 @@ def kl_vs_mu_rho(model:BNN|DNN):
                 yaxis_title="Sigma",
                 title = "Mu vs Sigma vs KL"
                 )
+    fig.write_image("kl_vs_mu_vs_rho.png")
     fig.show()
-    #fig.write_image("fig1.png")
+    
 
 
 
@@ -789,6 +791,6 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 #accuracy_by_prune([0.01, 0.5],[PruneByHyper], test_loader=test_loader, num_mc=1, model_path='model_90_BNN.path')
 
 #compare_bnn_dnn([0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], test_loader, PruneByMU, 30, 10, train_loader=train_loader)
-compare_bnn_dnn([0.25, 0.5, 0.75], test_loader, PruneByMU, tune_epochs=1, num_mc=1, train_loader=val_loader)
+#compare_bnn_dnn([0.25, 0.75], val_loader, PruneByMU, tune_epochs=1, num_mc=1, train_loader=val_loader)
 
 #kl_vs_mu_rho(model=bnn)

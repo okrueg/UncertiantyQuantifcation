@@ -1,4 +1,5 @@
 *.pyc 
 *.csv
+*.path
 data/*
 models/*

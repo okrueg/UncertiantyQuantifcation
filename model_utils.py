@@ -108,7 +108,10 @@ def train_fas_mnist(model: BasicCNN,
 
             train_output = model(x,y)
 
-            activations = model.activations
+            activations = None
+            if hasattr(model, 'activations'):
+                activations = model.activations
+
 
             loss = loss_fn(train_output, y, activations)
 
@@ -162,7 +165,7 @@ def train_fas_mnist(model: BasicCNN,
                 y = y.to(DEVICE)
 
                 val_output = model(x,y)
-                overall_val_loss += loss_fn(val_output, y, model.activations).item()
+                overall_val_loss += loss_fn(val_output, y, None).item()
 
                 #---- Calculate train accuracys for the Batch ----
                 predictions = torch.max(val_output, dim=1)[1]
