@@ -14,8 +14,11 @@ from datasets import loadData
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-
-DEVICE = 'mps' if torch.backends.mps.is_available() else 'cpu'
+DEVICE = 'cpu'
+if torch.backends.mps.is_available():
+    DEVICE = 'mps'
+elif torch.cuda.is_available():
+    DEVICE = 'cuda'
 
 class PruneByMU():
     def __init__(self):
@@ -791,6 +794,6 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 #accuracy_by_prune([0.01, 0.5],[PruneByHyper], test_loader=test_loader, num_mc=1, model_path='model_90_BNN.path')
 
 #compare_bnn_dnn([0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], test_loader, PruneByMU, 30, 10, train_loader=train_loader)
-#compare_bnn_dnn([0.25, 0.75], val_loader, PruneByMU, tune_epochs=1, num_mc=1, train_loader=val_loader)
+compare_bnn_dnn([0.25, 0.75], val_loader, PruneByMU, tune_epochs=1, num_mc=1, train_loader=val_loader)
 
 #kl_vs_mu_rho(model=bnn)

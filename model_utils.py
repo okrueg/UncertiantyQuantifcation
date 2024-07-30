@@ -13,6 +13,11 @@ from datasets import loadData
 from model_architectures import BasicCNN
 from wideresnet import WideResNet
 
+DEVICE = 'cpu'
+if torch.backends.mps.is_available():
+    DEVICE = 'mps'
+elif torch.cuda.is_available():
+    DEVICE = 'cuda'
 
 class ActivationLoss(torch.nn.CrossEntropyLoss):
     def __init__(self, gamma: float, label_smoothing: float):
@@ -426,16 +431,6 @@ def feature_correlation(activations):
     
     return np.cov(activations, rowvar=False)
 
-
-
-
-
-DEVICE = torch.device('cpu')
-
-if torch.cuda.is_available():
-    DEVICE = torch.device('cuda:0')
-elif torch.backends.mps.is_available():
-    DEVICE = torch.device('mps')
 
 #------- TEST the MODEL PROCESSCESS ------
 # train_loader,val_loader,test_loader = loadData('CIFAR-10',batch_size= 200)
