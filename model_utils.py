@@ -59,7 +59,7 @@ def train_fas_mnist(model: BasicCNN,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 7, gamma=0.90)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40, 80], gamma=0.2)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 15], gamma=0.2)
 
     best_val_loss = np.inf
     best_test_acc = -1 * np.inf

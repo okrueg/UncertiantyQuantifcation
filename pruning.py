@@ -83,7 +83,7 @@ class PruneByHyper():
         minimum = torch.min(t)
         maximum = torch.max(t)
 
-        return (t - minimum) / (maximum - minimum)
+        return (t - minimum) / ((maximum - minimum) + 1e-8)
 
 
     def __init__(self, mu_weight= 0.75):
@@ -389,6 +389,7 @@ def block_rho_grads(grad, mask):
     grad[mask != 1] = 0
     return grad
 
+
 def add_safe_kl(model):
     def safe_kl_div(self, mu_q, sigma_q, mu_p, sigma_p, tiny_val = 1e-8):
             """
@@ -404,6 +405,7 @@ def add_safe_kl(model):
         if hasattr(layer, "kl_loss"):
             # pylint: disable=no-value-for-parameter
             layer.kl_div = safe_kl_div.__get__(layer)
+
 
 def prune_dnn(model: torch.nn.Module, amount: float, perminate:bool):
     all_params = []
@@ -466,33 +468,111 @@ def reapply_prune(model: torch.nn.Module):
         rho_param.register_hook(partial(block_rho_grads, mask=mask))
 
 
-def accuracy_by_prune(prune_intervals:list, prune_method_list:list, test_loader, num_mc:int , model_path = None):
+def compare_by_prune(prune_intervals:list, 
+                      prune_method_list:list, 
+                      just_mu_test:bool, 
+                      test_loader, 
+                      tune_epochs:int, 
+                      num_mc:int,
+                      from_dnn:bool,      
+                      model_path:str,
+                      train_loader=None):
     x = np.array(prune_intervals)
 
-    # Run Results for Just MU
-    just_mus = []
-    for interval in prune_intervals:
-            model = torch.load(model_path) if model_path is not None else BNN(3)
-            model.to(DEVICE)
-
-            pruner = BayesParamCollector(model)
-            
-            pruner.global_just_mu_prune(interval)
-
-            _, accuracy, _ = bayesUtils.test_Bayes(model, test_loader, num_mc=10)
-
-            just_mus.append(accuracy)
-
-
     fig = go.Figure()
-    fig.add_scatter(x=x, y=just_mus)
-    fig.data[-1].name = 'Prune Only MU'
 
+    # Run Results for Just MU
+    if just_mu_test:
+        just_mus = []
+        for interval in prune_intervals:
+                model = torch.load(model_path) if model_path is not None else BNN(3)
+
+                if from_dnn:
+                    const_bnn_prior_parameters = {
+                                    "prior_mu": 0.0,
+                                    "prior_sigma": 1.0,
+                                    "posterior_mu_init": 0.0,
+                                    "posterior_rho_init": -3.0,
+                                    "type": "Reparameterization",
+                                    "moped_enable": True,
+                                    "moped_delta": 0.000,
+                                    }
+                    dnn_to_bnn(model, const_bnn_prior_parameters)
+
+                    add_safe_kl(model)
+                # Tune the Uninitialized Rhos
+                if from_dnn and tune_epochs > 0:
+                    _ = bayesUtils.train_Bayes(model=model,
+                        train_loader=train_loader,
+                        test_loader=test_loader,
+                        num_epochs=tune_epochs,
+                        num_mc= 5,
+                        temperature= 1,
+                        lr = 0.0005,
+                        from_dnn=from_dnn,
+                        save=False,
+                        save_mode='accuracy',
+                        verbose=True)
+
+                pruner = BayesParamCollector(model)
+                
+                pruner.global_just_mu_prune(interval)
+
+                model.to(DEVICE)
+
+                if tune_epochs > 0:
+                    _ = bayesUtils.train_Bayes(model=model,
+                                            train_loader=train_loader,
+                                            test_loader=test_loader,
+                                            num_epochs=tune_epochs,
+                                            num_mc= 5,
+                                            temperature= 1,
+                                            lr = 0.001,
+                                            from_dnn=from_dnn,
+                                            save=False,
+                                            save_mode='accuracy',
+                                            verbose=True)
+
+                _, accuracy, _ = bayesUtils.test_Bayes(model, test_loader,from_dnn=from_dnn, num_mc=num_mc)
+
+                just_mus.append(accuracy)
+
+        fig.add_scatter(x=x, y=just_mus)
+        fig.data[-1].name = 'Prune Only MU'
 
     for method in prune_method_list:
         method_accuracys = []
         for interval in prune_intervals:
             model = torch.load(model_path) if model_path is not None else BNN(3)
+
+            if from_dnn:
+                const_bnn_prior_parameters = {
+                                "prior_mu": 0.0,
+                                "prior_sigma": 1.0,
+                                "posterior_mu_init": 0.0,
+                                "posterior_rho_init": -3.0,
+                                "type": "Reparameterization",
+                                "moped_enable": True,
+                                "moped_delta": 0.000,
+                                }
+                dnn_to_bnn(model, const_bnn_prior_parameters)
+
+                add_safe_kl(model)
+
+            # Tune the Uninitialized Rhos
+            if from_dnn and tune_epochs > 0:
+                _ = bayesUtils.train_Bayes(model=model,
+                    train_loader=train_loader,
+                    test_loader=test_loader,
+                    num_epochs=tune_epochs,
+                    num_mc= 5,
+                    temperature= 1,
+                    lr = 0.0005,
+                    from_dnn=from_dnn,
+                    save=False,
+                    save_mode='accuracy',
+                    verbose=True)
+
             model.to(DEVICE)
 
             pruner = BayesParamCollector(model)
@@ -503,10 +583,22 @@ def accuracy_by_prune(prune_intervals:list, prune_method_list:list, test_loader,
 
             glob.apply_to_params()
 
-            _, accuracy, _ = bayesUtils.test_Bayes(model, test_loader, num_mc=10)
+            if tune_epochs > 0:
+                _ = bayesUtils.train_Bayes(model=model,
+                                        train_loader=train_loader,
+                                        test_loader=test_loader,
+                                        num_epochs=tune_epochs,
+                                        num_mc= 5,
+                                        temperature= 1,
+                                        lr = 0.001,
+                                        from_dnn=from_dnn,
+                                        save=False,
+                                        save_mode='accuracy',
+                                        verbose=True)
+
+            _, accuracy, _ = bayesUtils.test_Bayes(model, test_loader,from_dnn=from_dnn, num_mc=num_mc)
 
             method_accuracys.append(accuracy)
-
 
         fig.add_scatter(x=x, y= method_accuracys, mode='lines')
         fig.data[-1].name = method.__name__
@@ -514,10 +606,13 @@ def accuracy_by_prune(prune_intervals:list, prune_method_list:list, test_loader,
     fig.update_layout(
                 showlegend=True,
                 template='plotly_dark',
+                yaxis_range=[0.5,1],
                 xaxis_title="Prune Rate",
                 yaxis_title="Accuracy",
-                title = f"Survey of Bayesien Pruning Methods"
+                title = f"Survey of Bayesien Pruning Methods | Model: {type(model).__name__}"
                 )
+    
+    fig.write_image(f"prune_method_survey_tune{tune_epochs}.png")
     fig.show()
 
 
@@ -532,6 +627,7 @@ def compare_bnn_dnn(prune_intervals:list, test_loader, method, tune_epochs:int, 
     orig_dnn_tuned_accs= []
     from_dnn_tuned_accs = []
     bnn_tuned_accs = []
+
     for interval in prune_intervals:
         #load all them models
         orig_dnn = torch.load('prune_test_models/DNN_90.path')
@@ -640,7 +736,7 @@ def compare_bnn_dnn(prune_intervals:list, test_loader, method, tune_epochs:int, 
 
     fig = go.Figure()
 
-    fig.add_scatter(x=x, y=orig_dnn_accs, line=dict(color='darkgreen', width=3, dash='dash'))
+    fig.add_scatter(x=x, y=orig_dnn_accs, line=dict(color='darkgreen', width=4, dash='dash'))
     fig.data[-1].name = 'Orig DNN'
 
     fig.add_scatter(x=x, y=from_dnn_accs, line=dict(color='darkblue', width=3, dash='dash'))
@@ -662,6 +758,7 @@ def compare_bnn_dnn(prune_intervals:list, test_loader, method, tune_epochs:int, 
     fig.update_layout(
                     showlegend=True,
                     template='plotly_dark',
+                    yaxis_range=[0.5,1],
                     xaxis_title="Prune Rate",
                     yaxis_title="Accuracy",
                     title = f"Orig DNN vs Raised DNN vs BNN | Method: {method.__name__} | Tuning: {tune_epochs}"
@@ -669,6 +766,7 @@ def compare_bnn_dnn(prune_intervals:list, test_loader, method, tune_epochs:int, 
     
     fig.write_image(f"bnn_dnn_comparison_tune{tune_epochs}.png")
     fig.show()
+
 
 def kl_vs_mu_rho(model:BNN|DNN):
     pruner = BayesParamCollector(model)
@@ -707,10 +805,8 @@ def kl_vs_mu_rho(model:BNN|DNN):
 train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 
 #------TEST BNN Pruning-----------------
-# bnn = torch.load('prune_test_models/BNN_90.path')
+#bnn = torch.load('prune_test_models/BNN_90.path')
 
-
-# bnn.to(DEVICE)
 
 # #model_parameters = filter(lambda p: p.requires_grad, model.parameters())
 # # params = sum([np.prod(p.size()) for p in model_parameters])
@@ -743,37 +839,39 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 
 #pruner.global_rho_prune(0.50)
 #------ TEST DNN to BNN Pruning--------------
-#dnn = torch.load('prune_test_models/DNN_90.path')
+# wide = torch.load('WideResNet_90.path')
 
-#perma_prune_dnn(dnn, amount=0.5)
+# const_bnn_prior_parameters = {
+# "prior_mu": 0.0,
+# "prior_sigma": 1.0,
+# "posterior_mu_init": 0.0,
+# "posterior_rho_init": -3.0,
+# "type": "Reparameterization",
+# "moped_enable": True,
+# "moped_delta": 0.000,
+# }
 
-#print(dnn.fc1.weight)
+# dnn_to_bnn(wide, const_bnn_prior_parameters)
 
+# add_safe_kl(wide)
 
+# wide.to(DEVICE)
 
-# dnn_to_bnn(dnn, const_bnn_prior_parameters)
-
-# add_safe_kl(dnn)
-
-# reapply_prune(dnn)
-
-#dnn.to(DEVICE)
-
-# _ = bayesUtils.train_Bayes(model=dnn,
+# _ = bayesUtils.train_Bayes(model=wide,
 #                         train_loader=train_loader,
 #                         test_loader=test_loader,
-#                         num_epochs=20,
-#                         num_mc= 2,
-#                         temperature= 0.8,
+#                         num_epochs=5,
+#                         num_mc= 5,
+#                         temperature= 1,
 #                         lr = 0.001,
 #                         from_dnn=True,
 #                         save=False,
-#                         save_mode='accuracy')
+#                         save_mode='accuracy',
+#                         verbose=True)
 
+# bayesUtils.test_Bayes(wide, test_loader,num_mc=5, from_dnn=True)
+#model_utils.test_fas_mnist(wide,test_loader)
 
-# # print(dnn.fc1.rho_weight)
-
-# bayesUtils.test_Bayes(dnn, test_loader,num_mc=10, from_dnn=True)
 #-------- Test masks are the same-------
 # print(model.fc1.mu_weight_mask)
 # print()
@@ -791,9 +889,11 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 #bayesUtils.test_Bayes(model, test_loader, from_dnn=False, num_mc=10)
 
 #accuracy_by_prune([0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 0.9],[PruneByMU, PruneByRho, PruneByHyper, PruneByKL], test_loader=test_loader, num_mc=10, model_path='model_90_BNN.path')
-#accuracy_by_prune([0.01, 0.5],[PruneByHyper], test_loader=test_loader, num_mc=1, model_path='model_90_BNN.path')
+# compare_by_prune([0.001, 0.5, 0.75],[PruneByHyper, PruneByMU],just_mu_test=True,
+#                    test_loader=test_loader, train_loader=train_loader, 
+#                    tune_epochs=1, num_mc=3, from_dnn=True, model_path='prune_test_models/DNN_90.path')
 
-#compare_bnn_dnn([0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], test_loader, PruneByMU, 30, 10, train_loader=train_loader)
-compare_bnn_dnn([0.25, 0.75], val_loader, PruneByMU, tune_epochs=1, num_mc=1, train_loader=val_loader)
+
+#compare_bnn_dnn([0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], test_loader, PruneByMU, tune_epochs=20, num_mc=5, train_loader=train_loader)
 
 #kl_vs_mu_rho(model=bnn)

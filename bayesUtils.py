@@ -41,7 +41,7 @@ def train_Bayes(model: BNN,
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 7, gamma=0.90)
     #scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40, 80], gamma=0.2)
 
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20], gamma=0.2) # for fine tuning
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[5, 8], gamma=0.2) # for fine tuning
 
     best_test_acc = -1 * np.inf
 
