@@ -38,7 +38,7 @@ class MnistApp():
         
         # self.model.init_dropout(use_reg_dropout= False, use_activations= False, original_method= False, continous_dropout= True,
         #                         dropout_prob= 0.5, num_drop_channels=3, drop_certainty=1)
-        self.num_epochs = 91
+        self.num_epochs = 90
 
         #self.model = torch.load("model_20_BNN.path")
 

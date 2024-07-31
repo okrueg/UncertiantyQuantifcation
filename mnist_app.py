@@ -42,8 +42,8 @@ class MnistApp():
                         in_channels=3,
                         out_feature_size=20)
         
-        # self.model.init_dropout(use_reg_dropout= True, use_activations= True, original_method= False, continous_dropout= False,
-        #                         dropout_prob= 0.5, num_drop_channels=3, drop_certainty=0.95)
+        self.model.init_dropout(use_reg_dropout= False, use_activations= True, original_method= False, continous_dropout= False,
+                                dropout_prob= 0.75, num_drop_channels=3, drop_certainty=0.95)
         self.num_epochs = 90
 
         #self.model = torch.load("model_100_isreg_False_useAct_False_original_method_False.path")
@@ -53,9 +53,9 @@ class MnistApp():
                                                                                                                     val_loader=self.val_loader,
                                                                                                                     test_loader=self.test_loader,
                                                                                                                     num_epochs=self.num_epochs,
-                                                                                                                    activation_gamma = 0.000,
-                                                                                                                    lr = 0.001,
-                                                                                                                    save=False,
+                                                                                                                    activation_gamma = 0.003,
+                                                                                                                    lr = 0.01,
+                                                                                                                    save=True,
                                                                                                                     save_mode='accuracy')
 
         self.model = torch.load(self.best_model_path)

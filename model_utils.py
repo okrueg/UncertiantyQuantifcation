@@ -59,7 +59,7 @@ def train_fas_mnist(model: BasicCNN,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 7, gamma=0.90)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 15], gamma=0.2)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[int(0.5*num_epochs), int(0.8*num_epochs)], gamma=0.2)
 
     best_val_loss = np.inf
     best_test_acc = -1 * np.inf
@@ -101,9 +101,9 @@ def train_fas_mnist(model: BasicCNN,
                 if hasattr(model.dropout, "weight_matrix"):
                     with torch.no_grad():
                         model.eval()
-                        first_output, _ = model(x)
+                        first_output = model(x)
 
-                    model.dropout.weight_matrix = model.fc3.weight
+                    model.dropout.weight_matrix = model.fc2.weight
                     model.dropout.prev_output = first_output
 
                     # BUG Test
@@ -256,8 +256,8 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
                 if hasattr(model.dropout, "weight_matrix"):
                     with torch.no_grad():
                         model.eval()
-                        first_output, _ = model(x)
-                    model.dropout.weight_matrix = model.fc3.weight
+                        first_output = model(x)
+                    model.dropout.weight_matrix = model.fc2.weight
                     model.dropout.prev_output = first_output
 
             if evaluate:
@@ -460,19 +460,3 @@ def feature_correlation(activations):
 # print('Our Model')
 
 # print(test_survival(our_Model, test_loader=test_loader))
-
-#---------WIDE RESNET-------------
-
-# train_loader,val_loader,test_loader = loadData('CIFAR-10',batch_size= 200)
-
-# model = WideResNet(16,10,8)
-
-# _,_,model = train_fas_mnist(model=model,
-#                             train_loader=train_loader,
-#                             val_loader=val_loader,
-#                             test_loader=test_loader,
-#                             num_epochs=90,
-#                             activation_gamma=0,
-#                             lr= 0.001,
-#                             save=True,
-#                             save_mode='accuracy')

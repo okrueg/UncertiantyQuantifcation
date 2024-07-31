@@ -104,8 +104,7 @@ class BasicCNN(nn.Module):
             self.dropout = nn.Dropout(dropout_prob)
 
         else:
-            self.dropout= ConfusionDropout(use_activations, original_method, continous_dropout, dropout_prob, int(num_drop_channels), drop_certainty)#, DropoutDataHandler())
-            #self.dropout = SuperLabelDropout(dropout_prob, int(num_drop_channels))
+            self.dropout= ConfusionDropout(use_activations, original_method, continous_dropout, dropout_prob, int(num_drop_channels), drop_certainty)
 
 
     def forward(self, x: torch.Tensor, y=None):
@@ -156,10 +155,6 @@ class BasicCNN(nn.Module):
         return w * (desired / (self._eps + norm))
 
 
-
-
-
-
 class FromBayesCNN(nn.Module):
     '''
     a the deterministec version of the bays arch
@@ -180,6 +175,21 @@ class FromBayesCNN(nn.Module):
 
         self.activation = nn.LeakyReLU()
 
+
+    def init_dropout(self, use_reg_dropout: bool, use_activations: bool, continous_dropout:bool, original_method: bool,
+                    dropout_prob: float, num_drop_channels: int,  drop_certainty: float):
+    
+        self.use_reg_dropout = use_reg_dropout
+        self.use_activations = use_activations
+        self.originalMethod = original_method
+
+        if use_reg_dropout:
+            self.dropout = nn.Dropout(dropout_prob)
+
+        else:
+            self.dropout= ConfusionDropout(use_activations, original_method, continous_dropout, dropout_prob, int(num_drop_channels), drop_certainty)
+
+
     def forward(self, x: torch.Tensor, y=None):
         '''
         forwards through model
@@ -196,9 +206,17 @@ class FromBayesCNN(nn.Module):
 
         x = self.activation(self.fc1(x))
 
+        self.activations = x
+
+        if hasattr(self, 'dropout'):
+            if isinstance(self.dropout, ConfusionDropout):
+                x = self.dropout(x, y)
+            else:
+                x = self.dropout(x)
+
         x = self.fc2(x)
 
-        return x, None
+        return x
 
 
 
