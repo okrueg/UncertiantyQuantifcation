@@ -1,6 +1,8 @@
 from copy import deepcopy
+from matplotlib import pyplot as plt
 import torch
 from torch.utils.data import DataLoader
+from torchmetrics.classification import MulticlassCalibrationError
 from bayesian_torch.models.dnn_to_bnn import get_kl_loss
 import numpy as np
 from bayesArchetectures import BNN
@@ -32,7 +34,7 @@ def train_Bayes(model: BNN,
     print(f'Used Device: {DEVICE}') if verbose else None
     model.to(DEVICE)
 
-    loss_fn = torch.nn.NLLLoss() #label_smoothing=0.1
+    loss_fn = torch.nn.CrossEntropyLoss() #label_smoothing=0.1
 
 
     #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum= 0.9)
@@ -120,7 +122,9 @@ def train_Bayes(model: BNN,
 
             # Make sure loss isnt inf
             assert cross_entropy_loss != torch.inf
-            assert scaled_kl != torch.inf
+            assert scaled_kl != torch.inf, f'BAD KL LOSS: {scaled_kl}'
+
+            #print(f'crossLoss: {cross_entropy_loss} KL Loss: {scaled_kl}')
 
             #ELBO loss
             loss = cross_entropy_loss + temperature * scaled_kl
@@ -146,7 +150,7 @@ def train_Bayes(model: BNN,
             # print(f'Smallest gradient: {min_grad}')
             # print(f'Largest gradient: {max_grad}')
 
-            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.1)
+            #torch.nn.utils.clip_grad_value_(model.parameters(), clip_value=5)
 
         #-------Exploding KL loss testing ------------------
             # for layer in model.modules():
@@ -246,9 +250,11 @@ def test_Bayes(model: BNN, test_loader: DataLoader, num_mc: int, from_dnn = Fals
     '''
     with torch.no_grad():
         loss_fn = torch.nn.CrossEntropyLoss()
+        calib_metric = MulticlassCalibrationError(num_classes=10, n_bins=10, norm='l1')
+
         label_acc = [[] for x in range(10)]
         overall_test_loss = 0
-
+        calibrations = []
         for batch_idx, (x, y) in enumerate(test_loader):
             x = x.to(DEVICE)
             y = y.to(DEVICE)
@@ -289,7 +295,7 @@ def test_Bayes(model: BNN, test_loader: DataLoader, num_mc: int, from_dnn = Fals
             #print(output_[0])
             test_output = torch.mean(torch.stack(output_), dim=0)
 
-
+            calibrations.append(calib_metric(test_output, y).item())
 
             #----BUG TEST-----
             #print('output',torch.softmax(test_output, dim=1)[0:2])
@@ -313,14 +319,15 @@ def test_Bayes(model: BNN, test_loader: DataLoader, num_mc: int, from_dnn = Fals
 
         total_acc = float(sum(label_acc)/10)
 
+        calib_error = (sum(calibrations)/len(calibrations))
+
     if verbose:
         print(f"Testing Loss: {overall_test_loss}")
         print(f"Accuracies: {label_acc}")
         print(f"Total Accuracy: {total_acc:.4f}")
         print()
 
-
-    return overall_test_loss, total_acc, label_acc
+    return overall_test_loss, calib_error, total_acc, label_acc
 
 
 #------- TEST the MODEL PROCESSCESS ------

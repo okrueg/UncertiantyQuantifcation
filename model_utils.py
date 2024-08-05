@@ -1,5 +1,6 @@
 from copy import copy, deepcopy
 
+from matplotlib import pyplot as plt
 import numpy as np
 import torch
 from torch import nn
@@ -9,6 +10,7 @@ from tqdm import tqdm
 import plotly.express as px
 import torch.utils
 from torch.utils.data import DataLoader
+from torchmetrics.classification import MulticlassCalibrationError
 from datasets import loadData
 from model_architectures import BasicCNN
 from wideresnet import WideResNet
@@ -245,9 +247,12 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
     '''
     with torch.no_grad():
         loss_fn = torch.nn.CrossEntropyLoss()
+        calib_metric = MulticlassCalibrationError(num_classes=10, n_bins=10, norm='l1')
+
         label_acc = [[] for x in range(10)]
         overall_test_loss = 0
         activations_ = []
+        calibrations = []
 
         for batch_idx, (x, y) in enumerate(test_loader):
             x = x.to(DEVICE)
@@ -266,6 +271,8 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
                 model.train()
 
             test_output = model(x, y)
+
+            calibrations.append(calib_metric(test_output, y).item())
 
 
             #----BUG TEST-----
@@ -298,6 +305,8 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
 
         total_acc = float(sum(label_acc)/10)
 
+        calib_error = sum(calibrations)/len(calibrations)
+
     if verbose:
         print(f"Testing Loss: {overall_test_loss}")
         print(f"Accuracies: {label_acc}")
@@ -305,7 +314,7 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
         print()
 
 
-    return overall_test_loss, total_acc, label_acc
+    return overall_test_loss, calib_error, total_acc, label_acc
 
 def test_survival(model: BasicCNN, test_loader: DataLoader, steps = [0.0, 0.2, 0.4, 0.6, 0.8, 0.95]):
 

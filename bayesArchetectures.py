@@ -44,12 +44,8 @@ class BNN(nn.Module):
 
         x, kl = self.fc2(x)
         kl_sum += kl
-        
-        #output = x
 
-        output = F.log_softmax(x, dim=1)
-
-        return output, kl_sum
+        return x, kl_sum
 
 class DNN(nn.Module):
     def __init__(self, in_channels):
@@ -91,12 +87,9 @@ class DNN(nn.Module):
 
         x = self.activation(x)
 
-        x = self.fc2(x)
-        #output = x
+        x = self.fc2(x) 
 
-        output = F.log_softmax(x, dim=1)
-
-        return output
+        return x
 
 
 # epochs = 50

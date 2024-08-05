@@ -8,6 +8,7 @@ from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn, get_rho
 import plotly.express as px
 import plotly.graph_objects as go
 from bayesArchetectures import BNN, DNN
+from wideresnet import WideResNet
 import bayesUtils
 import model_utils
 from datasets import loadData
@@ -163,8 +164,6 @@ class PruneByKL():
 
         kl_scores = PruneByKL.indv_kl(mu_tensor, sigma_tensor, mu_prior, sigma_prior )
 
-        print(kl_scores)
-
         return kl_scores
 
 
@@ -184,6 +183,7 @@ class PruneByKL():
 
 
 class BayesParamCollector():
+
     def __init__(self, model: BNN):
         self.model = model
 
@@ -201,17 +201,34 @@ class BayesParamCollector():
             
 
     def collect_weight_params(self, collect_by: str):
+        #https://stackoverflow.com/questions/54846905/pytorch-get-all-layers-of-model
+        def get_children(model: torch.nn.Module):
+
+            children = list(model.children())
+            flatt_children = []
+            if children == []:
+
+                return model
+            else:
+
+                for child in children:
+                    try:
+                        flatt_children.extend(get_children(child))
+                    except TypeError:
+                        flatt_children.append(get_children(child))
+            return flatt_children
+        
+
         all_mu= []
         all_rho= []
-
         match collect_by:
             case 'mu':
-                for module in self.model.children():
-                    for name, parameter in module.named_parameters():
-                        if ('mu' in name and 'bias' not in name):
-                            
-                            all_mu.append((module, name))
-                            all_rho.append((module, name.replace('mu', 'rho')))
+                for module in get_children(self.model):
+                        for name, parameter in module.named_parameters():
+                            if ('mu' in name and 'bias' not in name):
+                                
+                                all_mu.append((module, name))
+                                all_rho.append((module, name.replace('mu', 'rho')))
             
             case 'rho':
                 for module in self.model.modules():
@@ -232,7 +249,10 @@ class BayesParamCollector():
 
         # all_rho.clear()
         # all_rho.append((self.model.fc1, 'rho_weight'))
-        #print(all_mu, all_rho)
+        #print(all_mu)
+
+        # all_mu = all_mu[0] 
+        # all_rho = all_rho[0]
 
         return all_mu, all_rho
 
@@ -329,6 +349,8 @@ class GlobalUnstructuredPrune():
                 else:
                     mask[self.scores <= self.threshhold] = 0
 
+            #print((mask ==1).sum()/mask.numel())
+
             return mask
     
 
@@ -407,6 +429,16 @@ def add_safe_kl(model):
             layer.kl_div = safe_kl_div.__get__(layer)
 
 
+def remove_safe_kl(model):
+    '''
+    only needed for proper model saving
+    '''
+    for layer in model.modules():
+        if hasattr(layer, "kl_div"):
+            # pylint: disable=no-value-for-parameter
+            delattr(layer, 'kl_div')
+
+
 def prune_dnn(model: torch.nn.Module, amount: float, perminate:bool):
     all_params = []
     for module in model.modules():
@@ -475,20 +507,23 @@ def compare_by_prune(prune_intervals:list,
                       pretune_epochs:int,
                       tune_epochs:int, 
                       num_mc:int,
-                      from_dnn:bool,      
+                      to_bnn:bool,
+                      orig_dnn:bool,   
                       model_path:str,
                       train_loader=None):
     x = np.array(prune_intervals)
 
-    fig = go.Figure()
+    acc_fig = go.Figure()
+    calib_fig = go.Figure()
 
     # Run Results for Just MU
     if just_mu_test:
         just_mus = []
+        just_mus_calibrations= []
         for interval in prune_intervals:
                 model = torch.load(model_path) if model_path is not None else BNN(3)
 
-                if from_dnn:
+                if to_bnn:
                     const_bnn_prior_parameters = {
                                     "prior_mu": 0.0,
                                     "prior_sigma": 1.0,
@@ -510,7 +545,7 @@ def compare_by_prune(prune_intervals:list,
                         num_mc= 5,
                         temperature= 1,
                         lr = 0.0005,
-                        from_dnn=from_dnn,
+                        from_dnn=orig_dnn,
                         save=False,
                         save_mode='accuracy',
                         verbose=True)
@@ -529,24 +564,30 @@ def compare_by_prune(prune_intervals:list,
                                             num_mc= 5,
                                             temperature= 1,
                                             lr = 0.001,
-                                            from_dnn=from_dnn,
+                                            from_dnn=orig_dnn,
                                             save=False,
                                             save_mode='accuracy',
                                             verbose=True)
 
-                _, accuracy, _ = bayesUtils.test_Bayes(model, test_loader,from_dnn=from_dnn, num_mc=num_mc)
+
+                _, calibration, accuracy, _ = bayesUtils.test_Bayes(model, test_loader,from_dnn=orig_dnn, num_mc=num_mc)
 
                 just_mus.append(accuracy)
+                just_mus_calibrations.append(calibration)
 
-        fig.add_scatter(x=x, y=just_mus)
-        fig.data[-1].name = 'Prune Only MU'
+        acc_fig.add_scatter(x=x, y=just_mus)
+        acc_fig.data[-1].name = 'Prune Only MU'
+
+        calib_fig.add_scatter(x=x, y=just_mus_calibrations)
+        calib_fig.data[-1].name = 'Prune Only MU'
 
     for method in prune_method_list:
         method_accuracys = []
+        method_calibrations = []
         for interval in prune_intervals:
             model = torch.load(model_path) if model_path is not None else BNN(3)
 
-            if from_dnn:
+            if to_bnn:
                 const_bnn_prior_parameters = {
                                 "prior_mu": 0.0,
                                 "prior_sigma": 1.0,
@@ -569,7 +610,7 @@ def compare_by_prune(prune_intervals:list,
                     num_mc= 5,
                     temperature= 1,
                     lr = 0.0005,
-                    from_dnn=from_dnn,
+                    from_dnn=orig_dnn,
                     save=False,
                     save_mode='accuracy',
                     verbose=True)
@@ -592,19 +633,23 @@ def compare_by_prune(prune_intervals:list,
                                         num_mc= 5,
                                         temperature= 1,
                                         lr = 0.001,
-                                        from_dnn=from_dnn,
+                                        from_dnn=orig_dnn,
                                         save=False,
                                         save_mode='accuracy',
                                         verbose=True)
 
-            _, accuracy, _ = bayesUtils.test_Bayes(model, test_loader,from_dnn=from_dnn, num_mc=num_mc)
+            _, calibration, accuracy, _ = bayesUtils.test_Bayes(model, test_loader,from_dnn=orig_dnn, num_mc=num_mc)
 
             method_accuracys.append(accuracy)
+            method_calibrations.append(calibration)
 
-        fig.add_scatter(x=x, y= method_accuracys, mode='lines')
-        fig.data[-1].name = method.__name__
+        acc_fig.add_scatter(x=x, y= method_accuracys, mode='lines')
+        acc_fig.data[-1].name = method.__name__
 
-    fig.update_layout(
+        calib_fig.add_scatter(x=x, y= method_calibrations, mode='lines')
+        calib_fig.data[-1].name = method.__name__
+
+    acc_fig.update_layout(
                 showlegend=True,
                 template='plotly_dark',
                 yaxis_range=[0.5,1],
@@ -613,8 +658,20 @@ def compare_by_prune(prune_intervals:list,
                 title = f"Survey of Bayesien Pruning Methods | Model: {type(model).__name__}"
                 )
     
-    fig.write_image(f"prune_method_survey_tune{tune_epochs}.png")
-    fig.show()
+    calib_fig.update_layout(
+            showlegend=True,
+            template='plotly_dark',
+            #yaxis_range=[0.0,0.4],
+            xaxis_title="Prune Rate",
+            yaxis_title="Callibration Error",
+            title = f"Bayesien Pruning Methods Calibration Error | Model: {type(model).__name__}"
+            )
+    
+    acc_fig.write_image(f"prune_method_survey_tune{tune_epochs}_accuracys.png")
+    calib_fig.write_image(f"prune_method_survey_tune{tune_epochs}_calibrations.png")
+    
+    calib_fig.show()
+    acc_fig.show()
 
 
 def hyper_pruning_compare(prune_intervals:list, 
@@ -900,15 +957,15 @@ def kl_vs_mu_rho(model:BNN|DNN):
 train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 
 #------TEST BNN Pruning-----------------
-#bnn = torch.load('prune_test_models/BNN_90.path')
-
+# bnn = torch.load('prune_test_models/BNN_90.path')
+# dnn = torch.load('prune_test_models/DNN_90.path')
 # #model_parameters = filter(lambda p: p.requires_grad, model.parameters())
 # # params = sum([np.prod(p.size()) for p in model_parameters])
 # # print(params)
 
 
-# pruner = BaysianPruning(bnn)
-
+# pruner = BayesParamCollector(bnn)
+# pruner.collect_weight_params('mu')
 # #pruner.global_just_mu_prune(0.1)
 # glob = GlobalUnstructuredPrune(0.75, pruner, PruneByMU)
 
@@ -921,8 +978,12 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 # print(bnn.fc1.rho_weight_mask)
 # print(bnn.fc1.rho_weight)
 
-# # bayesUtils.test_Bayes(bnn, test_loader, from_dnn=False, num_mc=10)
+# bayes_test_results = bayesUtils.test_Bayes(bnn, test_loader, from_dnn=False, num_mc=5)
 
+# test_results = model_utils.test_fas_mnist(dnn, test_loader)
+
+# print(bayes_test_results[1])
+# print(test_results[1])
 # print(bnn.fc1.rho_weight)
 
 # bayesUtils.test_Bayes(bnn, test_loader,num_mc=10, from_dnn=False)
@@ -930,7 +991,8 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 
 #pruner.global_rho_prune(0.50)
 #------ TEST DNN to BNN Pruning--------------
-# wide = torch.load('WideResNet_90.path')
+#wide = torch.load('WideResNet_90.path')
+# wide = WideResNet(16, 10, 8)
 
 # const_bnn_prior_parameters = {
 # "prior_mu": 0.0,
@@ -944,23 +1006,28 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 
 # dnn_to_bnn(wide, const_bnn_prior_parameters)
 
-# add_safe_kl(wide)
+# #add_safe_kl(wide)
 
 # wide.to(DEVICE)
 
 # _ = bayesUtils.train_Bayes(model=wide,
 #                         train_loader=train_loader,
 #                         test_loader=test_loader,
-#                         num_epochs=5,
+#                         num_epochs=90,
 #                         num_mc= 5,
 #                         temperature= 1,
 #                         lr = 0.001,
 #                         from_dnn=True,
-#                         save=False,
+#                         save=True,
 #                         save_mode='accuracy',
 #                         verbose=True)
 
-# bayesUtils.test_Bayes(wide, test_loader,num_mc=5, from_dnn=True)
+#remove_safe_kl(wide)
+# torch.save(wide, 'wide_working.path')
+
+# wide = torch.load('wide_working.path')
+
+#bayesUtils.test_Bayes(wide, test_loader,num_mc=1, from_dnn=True)
 #model_utils.test_fas_mnist(wide,test_loader)
 
 #-------- Test masks are the same-------
@@ -980,23 +1047,23 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 #                    tune_epochs=10, num_mc=5, from_dnn=False, model_path='prune_test_models/BNN_90.path')
 
 #-----------------------------CURRENT RUN--------------------------------
-hyper_pruning_compare([0.1, 0.5, 0.75, 0.9], [0.1, 0.5, 0.75, 0.9],
-                   test_loader=test_loader, train_loader=train_loader, 
-                   tune_epochs=1, num_mc=5, from_dnn=False, 
-                   model_path='prune_test_models/WIDE_BNN_90.path')
+
+compare_by_prune([0.001,0.5, 0.95],[PruneByMU, PruneByHyper, PruneByKL],just_mu_test=True,
+                   test_loader=val_loader, train_loader=val_loader, 
+                   tune_epochs=1, pretune_epochs=1, num_mc=5, orig_dnn= True, to_bnn=False, 
+                   model_path='prune_test_models/wide_90_BNN.path')
 
 #------------------------------ TO RUN------------------------------------
-
-# compare_bnn_dnn([0.001,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], PruneByMU, pretune_epochs=0, tune_epochs=20, num_mc=5,
-#                 dnn_path='prune_test_models/DNN_90.path', bnn_path='prune_test_models/BNN_90.path',
-#                 test_loader=test_loader, train_loader=train_loader)
-
-
-
-# compare_by_prune([0.001, 0.5, 0.75, 0.9, 0.95],[PruneByMU, PruneByRho, PruneByHyper, PruneByKL],just_mu_test=True,
+# hyper_pruning_compare([0.1, 0.5, 0.75, 0.9], [0.1, 0.5, 0.75, 0.9],
 #                    test_loader=test_loader, train_loader=train_loader, 
-#                    tune_epochs=1, pretune_epochs=0, num_mc=5, from_dnn=False, 
+#                    tune_epochs=1, num_mc=5, from_dnn=False, 
 #                    model_path='prune_test_models/WIDE_BNN_90.path')
+
+
+# compare_bnn_dnn([0.001,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], PruneByHyper, pretune_epochs=1, tune_epochs=1, num_mc=1,
+#                 dnn_path='prune_test_models/DNN_90.path', bnn_path='prune_test_models/BNN_90.path',
+#                 test_loader=val_loader, train_loader=val_loader)
+
 
 # compare_bnn_dnn([0.001,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], PruneByMU, pretune_epochs=0, tune_epochs=20, num_mc=5,
 #                 dnn_path='prune_test_models/WIDE_DNN_90.path', bnn_path='prune_test_models/WIDE_BNN_90.path',
