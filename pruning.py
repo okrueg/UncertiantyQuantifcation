@@ -585,7 +585,7 @@ def compare_by_prune(prune_intervals:list,
         method_accuracys = []
         method_calibrations = []
         for interval in prune_intervals:
-            model = torch.load(model_path) if model_path is not None else BNN(3)
+            model = torch.load(model_path, map_location=DEVICE)
 
             if to_bnn:
                 const_bnn_prior_parameters = {
@@ -1058,7 +1058,6 @@ compare_by_prune([0.001,0.5, 0.95],[PruneByMU, PruneByHyper, PruneByKL],just_mu_
 #                    test_loader=test_loader, train_loader=train_loader, 
 #                    tune_epochs=1, num_mc=5, from_dnn=False, 
 #                    model_path='prune_test_models/WIDE_BNN_90.path')
-
 
 # compare_bnn_dnn([0.001,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], PruneByHyper, pretune_epochs=1, tune_epochs=1, num_mc=1,
 #                 dnn_path='prune_test_models/DNN_90.path', bnn_path='prune_test_models/BNN_90.path',
