@@ -184,7 +184,7 @@ def train_fas_mnist(model: BasicCNN,
                             test_loader=test_loader,
                             verbose=False)
 
-        test_loss, test_acc = test_stats[0], test_stats[1]
+        test_loss, test_acc = test_stats[0], test_stats[2]
 
         overall_training_loss = overall_training_loss/len(train_loader)
         overall_val_loss = overall_val_loss/len(val_loader)
@@ -330,7 +330,7 @@ def test_survival(model: BasicCNN, test_loader: DataLoader, steps = [0.0, 0.2, 0
                            drop_certainty=1.0)
         model.train()
 
-        _, acc, _ = test_fas_mnist(model, test_loader, evaluate=False, verbose=False)
+        _,_, acc, _ = test_fas_mnist(model, test_loader, evaluate=False, verbose=False)
         survival_accs.append(acc)
 
     return survival_accs
@@ -416,7 +416,7 @@ def model_grid_training(model_params: np.ndarray,
 
         min_training_loss= min(min_training_loss[0])
 
-        test_loss, test_acc, _ = test_fas_mnist(model=best_model,test_loader=test_loader, verbose=verboscity)
+        test_loss,_, test_acc, _ = test_fas_mnist(model=best_model,test_loader=test_loader, verbose=verboscity)
 
         print(f'{rank} finished {params}')
 

@@ -200,7 +200,7 @@ def train_Bayes(model: BNN,
                     from_dnn=from_dnn,
                     verbose=False)
 
-        test_loss, test_acc = test_stats[0], test_stats[1]
+        test_loss, test_acc = test_stats[0], test_stats[2]
 
         test_accs.append(test_acc)
 

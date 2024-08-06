@@ -77,14 +77,21 @@ class PruneByRho():
 
 
 class PruneByHyper():
+    overall_max = -1 * torch.inf
+    overall_min = 1 * torch.inf
+    set_min_max = False
 
-    @staticmethod
-    def minMaxNorm(t):
+    @classmethod
+    def minMaxNorm(cls,t):
+        if cls.set_min_max is False:
+            cls.overall_max = torch.max(t)
+            cls.overall_min = torch.min(t)
+            cls.set_min_max = True
 
-        minimum = torch.min(t)
-        maximum = torch.max(t)
+        minimum = cls.overall_min
+        maximum = cls.overall_max
 
-        return (t - minimum) / ((maximum - minimum) + 1e-8)
+        return (t - minimum) / ((maximum - minimum) + 1e-9)
 
 
     def __init__(self, mu_weight= 0.75):
@@ -94,6 +101,7 @@ class PruneByHyper():
         print(f'mu_weight: {mu_weight}')
 
         self.mu_weight = mu_weight
+        self.rho_weight = 1 - mu_weight
 
 
     def __call__(self, amount, mu_tensor, rho_tensor):
@@ -107,9 +115,9 @@ class PruneByHyper():
 
         mu_scores = mu_norm * self.mu_weight
 
-        rho_norm = PruneByHyper.minMaxNorm(rho_tensor)
+        rho_norm = PruneByHyper.minMaxNorm(-1* rho_tensor)
 
-        rho_scores = 1 - (rho_norm * (1- self.mu_weight))
+        rho_scores = rho_norm * self.rho_weight
 
         scores = mu_scores + rho_scores
 
@@ -322,7 +330,6 @@ class GlobalUnstructuredPrune():
             super().apply(module, name, importance_scores= None, is_rho=is_rho, symbol_flip=symbol_flip, threshhold=threshhold, scores=scores)
 
 
-
         def __init__(self, is_rho:bool, symbol_flip: bool, threshhold:int, scores: torch.Tensor | None):
             super().__init__()
 
@@ -333,8 +340,6 @@ class GlobalUnstructuredPrune():
 
 
         def compute_mask(self, t, default_mask):
-
-            self.scores = t if self.scores is None else self.scores
             mask = default_mask.clone()
             # Filter Large Variences for prune by Rho
             if self.symbol_flip:
@@ -348,8 +353,6 @@ class GlobalUnstructuredPrune():
                     mask[self.scores <= self.threshhold] = torch.inf
                 else:
                     mask[self.scores <= self.threshhold] = 0
-
-            #print((mask ==1).sum()/mask.numel())
 
             return mask
     
@@ -388,11 +391,7 @@ class GlobalUnstructuredPrune():
             # Sanity Check, Should never trigger o_0
             assert module == _
 
-            # Create Scores for threshhold, else just feed in mu
-            if hasattr(self.method, 'get_scores'):
-                scores = self.method.get_scores(module.get_parameter(mu_name), module.get_parameter(rho_name))
-            else:
-                scores = None
+            scores = self.method.get_scores(module.get_parameter(mu_name), module.get_parameter(rho_name))
 
             symbol_flip = True if type(self.method).__name__ == 'PruneByRho' else False
 
@@ -521,7 +520,7 @@ def compare_by_prune(prune_intervals:list,
         just_mus = []
         just_mus_calibrations= []
         for interval in prune_intervals:
-                model = torch.load(model_path) if model_path is not None else BNN(3)
+                model = torch.load(model_path, map_location=DEVICE)
 
                 if to_bnn:
                     const_bnn_prior_parameters = {
@@ -536,19 +535,6 @@ def compare_by_prune(prune_intervals:list,
                     dnn_to_bnn(model, const_bnn_prior_parameters)
 
                     add_safe_kl(model)
-                # Tune the Uninitialized Rhos
-                if pretune_epochs > 0:
-                    _ = bayesUtils.train_Bayes(model=model,
-                        train_loader=train_loader,
-                        test_loader=test_loader,
-                        num_epochs=pretune_epochs,
-                        num_mc= 5,
-                        temperature= 1,
-                        lr = 0.0005,
-                        from_dnn=orig_dnn,
-                        save=False,
-                        save_mode='accuracy',
-                        verbose=True)
 
                 pruner = BayesParamCollector(model)
                 
@@ -584,6 +570,7 @@ def compare_by_prune(prune_intervals:list,
     for method in prune_method_list:
         method_accuracys = []
         method_calibrations = []
+        print('memory',torch.mps.current_allocated_memory())
         for interval in prune_intervals:
             model = torch.load(model_path, map_location=DEVICE)
 
@@ -963,7 +950,6 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 # # params = sum([np.prod(p.size()) for p in model_parameters])
 # # print(params)
 
-
 # pruner = BayesParamCollector(bnn)
 # pruner.collect_weight_params('mu')
 # #pruner.global_just_mu_prune(0.1)
@@ -1048,9 +1034,9 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 
 #-----------------------------CURRENT RUN--------------------------------
 
-compare_by_prune([0.001,0.5, 0.95],[PruneByMU, PruneByHyper, PruneByKL],just_mu_test=True,
+compare_by_prune([0.001, 0.25, 0.5, 0.7, 0.8, 0.95],[PruneByMU, PruneByHyper, PruneByKL],just_mu_test=True,
                    test_loader=val_loader, train_loader=val_loader, 
-                   tune_epochs=1, pretune_epochs=1, num_mc=5, orig_dnn= True, to_bnn=False, 
+                   tune_epochs=0, pretune_epochs=0, num_mc=1, orig_dnn= True, to_bnn=False, 
                    model_path='prune_test_models/wide_90_BNN.path')
 
 #------------------------------ TO RUN------------------------------------
@@ -1067,5 +1053,3 @@ compare_by_prune([0.001,0.5, 0.95],[PruneByMU, PruneByHyper, PruneByKL],just_mu_
 # compare_bnn_dnn([0.001,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], PruneByMU, pretune_epochs=0, tune_epochs=20, num_mc=5,
 #                 dnn_path='prune_test_models/WIDE_DNN_90.path', bnn_path='prune_test_models/WIDE_BNN_90.path',
 #                 test_loader=test_loader, train_loader=train_loader)
-
-
