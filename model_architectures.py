@@ -36,7 +36,7 @@ class BasicNN(nn.Module):
 
         x = self.ReLU(x)
 
-        x = self.dropout.forward(x, y)
+        #x = self.dropout.forward(x, y)
 
         x = self.output(x)
 

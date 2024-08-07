@@ -40,14 +40,14 @@ class feature_reduction():
 
         x = torch.from_numpy(x).float()
         #x = dim_inc(x)
-        x = model.forwardEmbeddings(x).detach().numpy()
+        x = model.forward_embeddings(x).detach().numpy()
         transformed = self.reduction.transform(x)
         return transformed
 
 
 class model_visualizer():
     def __init__(self):
-        self.center = [2,1.5]
+        self.center = [2,1]
         self.base_x, self.base_y, self.user_points = generate_data(200)
 
         self.shifted_x, self.shifted_y, self.shifted_user_points = generate_shifted(num_points=5, center=self.center)
@@ -138,7 +138,7 @@ class model_visualizer():
                 placeholder="200",  # A hint to the user of what can be entered in the control
                 debounce=True,                      # Changes to input are sent to Dash server only on enter or losing focus
                 value =200,
-                min=2, max=10000, step=200,         # Ranges of numeric value. Step refers to increments
+                min=2, max=10000,         # Ranges of numeric value. Step refers to increments
                 minLength=1, maxLength=5,          # Ranges for character length inside input box
                 autoComplete='off',
                 required=True,                     # Require user to insert something into input box
@@ -230,6 +230,7 @@ class model_visualizer():
                     self.add_point(clickData)
                 
                 case "num-points":
+                    print(new_num_points)
                     self.num_points = new_num_points               
             
             #-- Check if feilds are filled --#

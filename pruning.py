@@ -742,10 +742,20 @@ def compare_bnn_dnn(prune_intervals:list, method, pretune_epochs:int, tune_epoch
     from_dnn_accs = []
     bnn_accs = []
 
+    # Storing untuned calibrations
+    orig_dnn_calis = []
+    from_dnn_calis = []
+    bnn_calis = []
+
     # Storing tuned accuracies
     orig_dnn_tuned_accs= []
     from_dnn_tuned_accs = []
     bnn_tuned_accs = []
+
+    # Storing tuned calibrations
+    orig_dnn_tuned_calis= []
+    from_dnn_tuned_calis = []
+    bnn_tuned_calis = []
 
     for interval in prune_intervals:
         #load all them models
@@ -773,18 +783,6 @@ def compare_bnn_dnn(prune_intervals:list, method, pretune_epochs:int, tune_epoch
         bnn.to(DEVICE)
 
         if pretune_epochs > 0:
-            _ = bayesUtils.train_Bayes(model=bnn,
-                                    train_loader=train_loader,
-                                    test_loader=test_loader,
-                                    num_epochs=pretune_epochs,
-                                    num_mc= 5,
-                                    temperature= 1,
-                                    lr = 0.0005,
-                                    from_dnn=False,
-                                    save=False,
-                                    save_mode='accuracy',
-                                    verbose=True)
-
             _ = bayesUtils.train_Bayes(model=from_dnn,
                                     train_loader=train_loader,
                                     test_loader=test_loader,
@@ -814,18 +812,22 @@ def compare_bnn_dnn(prune_intervals:list, method, pretune_epochs:int, tune_epoch
         prune_dnn(orig_dnn, amount=interval, perminate=False)
 
         print(f'testing Original DNN at {interval} before tuning:')
-        _, orig_dnn_accuracy, _ = model_utils.test_fas_mnist(orig_dnn, test_loader)
+        _,orig_dnn_calibration, orig_dnn_accuracy, _ = model_utils.test_fas_mnist(orig_dnn, test_loader)
 
         print(f'testing From DNN at {interval} before tuning:')
-        _, from_dnn_accuracy, _ = bayesUtils.test_Bayes(from_dnn, test_loader,from_dnn=True, num_mc=num_mc)
+        _,from_dnn_calibration, from_dnn_accuracy, _ = bayesUtils.test_Bayes(from_dnn, test_loader,from_dnn=True, num_mc=num_mc)
 
         print(f'testing DNN at {interval} before tuning:')
-        _, bnn_accuracy, _ = bayesUtils.test_Bayes(bnn, test_loader, num_mc=num_mc)
+        _,bnn_calibration, bnn_accuracy, _ = bayesUtils.test_Bayes(bnn, test_loader,from_dnn=True, num_mc=num_mc)
         print()
 
         orig_dnn_accs.append(orig_dnn_accuracy)
         from_dnn_accs.append(from_dnn_accuracy)
         bnn_accs.append(bnn_accuracy)
+
+        orig_dnn_calis.append(orig_dnn_calibration)
+        from_dnn_calis.append(from_dnn_calibration)
+        bnn_calis.append(bnn_calibration)
 
         if tune_epochs > 0:
             _ = bayesUtils.train_Bayes(model=bnn,
@@ -835,7 +837,7 @@ def compare_bnn_dnn(prune_intervals:list, method, pretune_epochs:int, tune_epoch
                                     num_mc= 5,
                                     temperature= 1,
                                     lr = 0.001,
-                                    from_dnn=False,
+                                    from_dnn=True,
                                     save=False,
                                     save_mode='accuracy',
                                     verbose=True)
@@ -864,51 +866,87 @@ def compare_bnn_dnn(prune_intervals:list, method, pretune_epochs:int, tune_epoch
                                     verbose=True)
 
             print(f'testing Original DNN at {interval} after tuning:')
-            _, orig_dnn_accuracy_tuned, _ = model_utils.test_fas_mnist(orig_dnn, test_loader)
+            _,orig_dnn_calibration_tuned, orig_dnn_accuracy_tuned, _ = model_utils.test_fas_mnist(orig_dnn, test_loader)
 
             print(f'testing From DNN at {interval} after tuning:')
-            _, from_dnn_accuracy_tuned, _ = bayesUtils.test_Bayes(from_dnn, test_loader,from_dnn=True, num_mc=num_mc)
+            _,from_dnn_calibration_tuned, from_dnn_accuracy_tuned, _ = bayesUtils.test_Bayes(from_dnn, test_loader,from_dnn=True, num_mc=num_mc)
 
             print(f'testing BNN at {interval} after tuning:')
-            _, bnn_accuracy_tuned, _ = bayesUtils.test_Bayes(bnn, test_loader, num_mc=num_mc)
+            _,bnn_calibration_tuned, bnn_accuracy_tuned, _ = bayesUtils.test_Bayes(bnn, test_loader,from_dnn=True, num_mc=num_mc)
             print()
 
             orig_dnn_tuned_accs.append(orig_dnn_accuracy_tuned)
             from_dnn_tuned_accs.append(from_dnn_accuracy_tuned)
             bnn_tuned_accs.append(bnn_accuracy_tuned)
 
-    fig = go.Figure()
+            orig_dnn_tuned_calis.append(orig_dnn_calibration_tuned)
+            from_dnn_tuned_calis.append(from_dnn_calibration_tuned)
+            bnn_tuned_calis.append(bnn_calibration_tuned)
 
-    fig.add_scatter(x=x, y=orig_dnn_accs, line=dict(color='darkgreen', width=4, dash='dash'))
-    fig.data[-1].name = 'Orig DNN'
+    acc_fig = go.Figure()
+    cali_fig = go.Figure()
 
-    fig.add_scatter(x=x, y=from_dnn_accs, line=dict(color='darkblue', width=3, dash='dash'))
-    fig.data[-1].name = 'From DNN'
+    acc_fig.add_scatter(x=x, y=orig_dnn_accs, line=dict(color='darkgreen', width=4, dash='dash'))
+    acc_fig.data[-1].name = 'Orig DNN'
 
-    fig.add_scatter(x=x, y= bnn_accs, line=dict(color='darkred', width=3, dash='dash'))
-    fig.data[-1].name = 'BNN'
+    acc_fig.add_scatter(x=x, y=from_dnn_accs, line=dict(color='darkblue', width=3, dash='dash'))
+    acc_fig.data[-1].name = 'From DNN'
+
+    acc_fig.add_scatter(x=x, y= bnn_accs, line=dict(color='darkred', width=3, dash='dash'))
+    acc_fig.data[-1].name = 'BNN'
+
+    #Calibrations to figure
+    cali_fig.add_scatter(x=x, y=orig_dnn_calis, line=dict(color='darkgreen', width=4, dash='dash'))
+    cali_fig.data[-1].name = 'Orig DNN'
+
+    cali_fig.add_scatter(x=x, y=from_dnn_calis, line=dict(color='darkblue', width=3, dash='dash'))
+    cali_fig.data[-1].name = 'From DNN'
+
+    cali_fig.add_scatter(x=x, y= bnn_calis, line=dict(color='darkred', width=3, dash='dash'))
+    cali_fig.data[-1].name = 'BNN'
 
     if tune_epochs > 0:
-        fig.add_scatter(x=x, y=orig_dnn_tuned_accs, line=dict(color='green', width=3))
-        fig.data[-1].name = 'Tuned Orig DNN'
+        acc_fig.add_scatter(x=x, y=orig_dnn_tuned_accs, line=dict(color='green', width=3))
+        acc_fig.data[-1].name = 'Tuned Orig DNN'
 
-        fig.add_scatter(x=x, y=from_dnn_tuned_accs, line=dict(color='blue', width=3))
-        fig.data[-1].name = 'Tuned From DNN'
+        acc_fig.add_scatter(x=x, y=from_dnn_tuned_accs, line=dict(color='blue', width=3))
+        acc_fig.data[-1].name = 'Tuned From DNN'
 
-        fig.add_scatter(x=x, y= bnn_tuned_accs, line=dict(color='red', width=3))
-        fig.data[-1].name = 'Tuned BNN'
+        acc_fig.add_scatter(x=x, y= bnn_tuned_accs, line=dict(color='red', width=3))
+        acc_fig.data[-1].name = 'Tuned BNN'
 
-    fig.update_layout(
+        #Tuned calibrations add to figure
+        cali_fig.add_scatter(x=x, y=orig_dnn_tuned_calis, line=dict(color='green', width=3))
+        cali_fig.data[-1].name = 'Tuned Orig DNN'
+
+        cali_fig.add_scatter(x=x, y=from_dnn_tuned_calis, line=dict(color='blue', width=3))
+        cali_fig.data[-1].name = 'Tuned From DNN'
+
+        cali_fig.add_scatter(x=x, y= bnn_tuned_calis, line=dict(color='red', width=3))
+        cali_fig.data[-1].name = 'Tuned BNN'
+
+    acc_fig.update_layout(
                     showlegend=True,
                     template='plotly_dark',
-                    yaxis_range=[0.5,1],
+                    yaxis_range=[0.7,1],
                     xaxis_title="Prune Rate",
                     yaxis_title="Accuracy",
-                    title = f"Orig DNN vs Raised DNN vs BNN | Method: {method.__name__} | Tuning: {tune_epochs}"
+                    title = f"Orig DNN vs Raised DNN vs BNN | Method: {method.__name__} | Tuning: {tune_epochs}| Accuracy"
                     )
     
-    fig.write_image(f"bnn_dnn_comparison_tune{tune_epochs}.png")
-    fig.show()
+    cali_fig.update_layout(
+                showlegend=True,
+                template='plotly_dark',
+                xaxis_title="Prune Rate",
+                yaxis_title="Calibration Error",
+                title = f"Orig DNN vs Raised DNN vs BNN | Method: {method.__name__} | Tuning: {tune_epochs}| Calibrations"
+                )
+    
+    acc_fig.write_image(f"bnn_dnn_comparison_tune{tune_epochs}_accuracys.png")
+    acc_fig.show()
+
+    cali_fig.write_image(f"bnn_dnn_comparison_tune{tune_epochs}_calibrations.png")
+    cali_fig.show()
 
 
 def kl_vs_mu_rho(model:BNN|DNN):
@@ -1032,24 +1070,21 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 #                    test_loader=test_loader, train_loader=train_loader, 
 #                    tune_epochs=10, num_mc=5, from_dnn=False, model_path='prune_test_models/BNN_90.path')
 
+# compare_by_prune([0.001, 0.25, 0.5, 0.7, 0.8, 0.95],[PruneByMU, PruneByHyper, PruneByKL],just_mu_test=True,
+#                    test_loader=val_loader, train_loader=val_loader, 
+#                    tune_epochs=0, pretune_epochs=0, num_mc=1, orig_dnn= True, to_bnn=False, 
+#                    model_path='prune_test_models/wide_90_BNN.path')
 #-----------------------------CURRENT RUN--------------------------------
 
-compare_by_prune([0.001, 0.25, 0.5, 0.7, 0.8, 0.95],[PruneByMU, PruneByHyper, PruneByKL],just_mu_test=True,
-                   test_loader=val_loader, train_loader=val_loader, 
-                   tune_epochs=0, pretune_epochs=0, num_mc=1, orig_dnn= True, to_bnn=False, 
-                   model_path='prune_test_models/wide_90_BNN.path')
+compare_bnn_dnn([0.5,0.7,0.9,0.95,0.98], PruneByMU, pretune_epochs=5, tune_epochs=10, num_mc=5,
+                dnn_path='prune_test_models/WideResNet_90.path', bnn_path='prune_test_models/wide_90_BNN.path',
+                test_loader=test_loader, train_loader=train_loader)
 
 #------------------------------ TO RUN------------------------------------
-# hyper_pruning_compare([0.1, 0.5, 0.75, 0.9], [0.1, 0.5, 0.75, 0.9],
-#                    test_loader=test_loader, train_loader=train_loader, 
-#                    tune_epochs=1, num_mc=5, from_dnn=False, 
-#                    model_path='prune_test_models/WIDE_BNN_90.path')
 
 # compare_bnn_dnn([0.001,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], PruneByHyper, pretune_epochs=1, tune_epochs=1, num_mc=1,
 #                 dnn_path='prune_test_models/DNN_90.path', bnn_path='prune_test_models/BNN_90.path',
 #                 test_loader=val_loader, train_loader=val_loader)
 
 
-# compare_bnn_dnn([0.001,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], PruneByMU, pretune_epochs=0, tune_epochs=20, num_mc=5,
-#                 dnn_path='prune_test_models/WIDE_DNN_90.path', bnn_path='prune_test_models/WIDE_BNN_90.path',
-#                 test_loader=test_loader, train_loader=train_loader)
+
