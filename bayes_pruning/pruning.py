@@ -1,18 +1,23 @@
-from matplotlib import pyplot as plt
+import warnings
 import torch
 import numpy as np
+
 from math import ceil
 from functools import partial
 from torch.nn.utils import prune
-from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn, get_rho
+
 import plotly.express as px
 import plotly.graph_objects as go
-from bayesArchetectures import BNN, DNN
-from wideresnet import WideResNet
+from matplotlib import pyplot as plt
+
+
 import bayesUtils
 import model_utils
+from bayesArchetectures import BNN, DNN
+from wideresnet import WideResNet
+from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn, get_rho
 from datasets import loadData
-import warnings
+
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 DEVICE = 'cpu'
@@ -570,7 +575,7 @@ def compare_by_prune(prune_intervals:list,
     for method in prune_method_list:
         method_accuracys = []
         method_calibrations = []
-        print('memory',torch.mps.current_allocated_memory())
+
         for interval in prune_intervals:
             model = torch.load(model_path, map_location=DEVICE)
 
@@ -759,9 +764,9 @@ def compare_bnn_dnn(prune_intervals:list, method, pretune_epochs:int, tune_epoch
 
     for interval in prune_intervals:
         #load all them models
-        orig_dnn = torch.load(dnn_path)
-        from_dnn = torch.load(dnn_path)
-        bnn = torch.load(bnn_path)
+        orig_dnn = torch.load(dnn_path, map_location=DEVICE)
+        from_dnn = torch.load(dnn_path, map_location=DEVICE)
+        bnn = torch.load(bnn_path, map_location=DEVICE)
 
         const_bnn_prior_parameters = {
         "prior_mu": 0.0,
@@ -983,37 +988,22 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 
 #------TEST BNN Pruning-----------------
 # bnn = torch.load('prune_test_models/BNN_90.path')
-# dnn = torch.load('prune_test_models/DNN_90.path')
-# #model_parameters = filter(lambda p: p.requires_grad, model.parameters())
-# # params = sum([np.prod(p.size()) for p in model_parameters])
-# # print(params)
+
+#Before
+# bayesUtils.test_Bayes(bnn, test_loader, from_dnn=False, num_mc=5)
 
 # pruner = BayesParamCollector(bnn)
 # pruner.collect_weight_params('mu')
-# #pruner.global_just_mu_prune(0.1)
+
 # glob = GlobalUnstructuredPrune(0.75, pruner, PruneByMU)
 
 # glob.collect_theshhold()
 
 # glob.apply_to_params()
 
-# #print(bnn.fc1.mu_weight_mask)
+#After
+# bayesUtils.test_Bayes(bnn, test_loader,num_mc=5, from_dnn=False)
 
-# print(bnn.fc1.rho_weight_mask)
-# print(bnn.fc1.rho_weight)
-
-# bayes_test_results = bayesUtils.test_Bayes(bnn, test_loader, from_dnn=False, num_mc=5)
-
-# test_results = model_utils.test_fas_mnist(dnn, test_loader)
-
-# print(bayes_test_results[1])
-# print(test_results[1])
-# print(bnn.fc1.rho_weight)
-
-# bayesUtils.test_Bayes(bnn, test_loader,num_mc=10, from_dnn=False)
-#pruner.global_mu_prune(0.90)
-
-#pruner.global_rho_prune(0.50)
 #------ TEST DNN to BNN Pruning--------------
 #wide = torch.load('WideResNet_90.path')
 # wide = WideResNet(16, 10, 8)
@@ -1076,9 +1066,9 @@ train_loader, val_loader, test_loader = loadData('CIFAR-10',batch_size= 200)
 #                    model_path='prune_test_models/wide_90_BNN.path')
 #-----------------------------CURRENT RUN--------------------------------
 
-compare_bnn_dnn([0.5,0.7,0.9,0.95,0.98], PruneByMU, pretune_epochs=5, tune_epochs=10, num_mc=5,
+compare_bnn_dnn([0.5,0.7,0.9,0.95,0.98], PruneByMU, pretune_epochs=0, tune_epochs=0, num_mc=1,
                 dnn_path='prune_test_models/WideResNet_90.path', bnn_path='prune_test_models/wide_90_BNN.path',
-                test_loader=test_loader, train_loader=train_loader)
+                test_loader=val_loader, train_loader=val_loader)
 
 #------------------------------ TO RUN------------------------------------
 

@@ -9,7 +9,7 @@ from bayesArchetectures import BNN
 from tqdm import tqdm
 
 
-from datasets import loadData
+from shifted_dropout.datasets import loadData
 
 DEVICE = 'cpu'
 if torch.backends.mps.is_available():

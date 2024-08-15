@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from sklearn.preprocessing import MinMaxScaler
-from datasets import sparse2coarse
+from shifted_dropout.datasets import sparse2coarse
 
 class BasicNN(nn.Module):
     '''
@@ -17,8 +17,7 @@ class BasicNN(nn.Module):
         self.hidden1 = nn.Linear(hidden_dim, hidden_dim)
         self.output = nn.Linear(hidden_dim, output_dim)
 
-        # self.dropout = ConfusionDropout(use_activations=True, original_method=True, continous_dropout=False,
-        #                                 drop_percent=0.5, num_top_channels=1, drop_certianty=1.0)
+        self.dropout = shiftedDistDropout(hidden_dim)
 
         self.ReLU = nn.LeakyReLU(0.2)
         self.sigmoid = nn.Sigmoid()
@@ -36,7 +35,7 @@ class BasicNN(nn.Module):
 
         x = self.ReLU(x)
 
-        #x = self.dropout.forward(x, y)
+        x = self.dropout.forward(x)
 
         x = self.output(x)
 
@@ -90,11 +89,12 @@ class BasicCNN(nn.Module):
         self.ReLU = nn.LeakyReLU(0.2)
         #self.softmax = nn.Softmax(dim=1)
 
+        self.activations = torch.empty(0)
         self._max_norm_val = 3
         self._eps = 1e-8
 
     def init_dropout(self, use_reg_dropout: bool, use_activations: bool, continous_dropout:bool, original_method: bool,
-                      dropout_prob: float, num_drop_channels: int,  drop_certainty: float):
+                      dropout_prob: float, num_drop_channels: int,  drop_certainty: float, drop_handler=None):
         
         self.use_reg_dropout = use_reg_dropout
         self.use_activations = use_activations
@@ -104,7 +104,7 @@ class BasicCNN(nn.Module):
             self.dropout = nn.Dropout(dropout_prob)
 
         else:
-            self.dropout= ConfusionDropout(use_activations, original_method, continous_dropout, dropout_prob, int(num_drop_channels), drop_certainty)
+            self.dropout= ConfusionDropout(use_activations, original_method, continous_dropout, dropout_prob, int(num_drop_channels), drop_certainty, drop_handler)
 
 
     def forward(self, x: torch.Tensor, y=None):
@@ -146,7 +146,7 @@ class BasicCNN(nn.Module):
         self.fc3.weight.data = self._max_norm(self.fc3.weight.data)
         x = self.fc3(x)
 
-        return x, activations
+        return x
 
     #https://github.com/kevinzakka/pytorch-goodies#max-norm-constraint
     def _max_norm(self, w):
@@ -521,7 +521,6 @@ class DropoutDataHandler():
         '''
         retrieves the data of a specific epoch
         '''
-        print(self)
         label_indices = torch.nonzero((self.epoch_info["labels"][epoch] == label), as_tuple=True)[0]
 
 
@@ -556,6 +555,7 @@ class shiftedDistDropout(nn.Module):
         else:
             self.shifted_distribution = var_mean
 
+
     def get_mask(self, verbose = True):
         '''
         Retrieves mask for dropout
@@ -589,7 +589,7 @@ class shiftedDistDropout(nn.Module):
         '''
         if self.training:
             mask = self.get_mask()
-            print(x.shape)
+            #print(f'x shape: {x.shape}',f'mask shape: {mask.shape}')
             x = x * mask
         else:
             #print(self.recent_mean_diff.float())

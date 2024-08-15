@@ -20,6 +20,7 @@ def train_2d(x: np.ndarray,
           shift: np.ndarray,
           model: BasicNN,
           dim_inc: DimensionIncreaser,
+          shifted_from:int,
           num_epochs = 100,
           batch_size = 20,
           hidden_dim = 10,
@@ -30,7 +31,7 @@ def train_2d(x: np.ndarray,
     y = torch.from_numpy(y).float()
     shift = torch.from_numpy(shift).float()
 
-    x_class1 = x[y == 1]
+    x_class1 = x[y == shifted_from]
 
     dataset = TensorDataset(x, y)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)

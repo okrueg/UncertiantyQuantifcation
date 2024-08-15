@@ -6,8 +6,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from datasets import loadData
-from model_architectures import BasicCNN
+from shifted_dropout.datasets import loadData
+from shifted_dropout.model_architectures import BasicCNN
 from model_utils import train_fas_mnist, test_fas_mnist
 
 reg_model = BasicCNN(num_classes= 10,

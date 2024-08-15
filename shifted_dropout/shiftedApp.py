@@ -12,7 +12,7 @@ from openTSNE import TSNE
 
 from data_set_generation import exclusion_area, generate_data, generate_shifted
 from model_architectures import BasicNN, DimensionIncreaser, shiftedDistDropout
-import model_train
+import model_train as model_train
 
 
 class feature_reduction():
@@ -112,16 +112,16 @@ class model_visualizer():
             dcc.Input(
                 id='y_coord',
                 type='number',
-                placeholder="circle: y",  # A hint to the user of what can be entered in the control
-                debounce=False,                      # Changes to input are sent to Dash server only on enter or losing focus
+                placeholder="circle: y",
+                debounce=False,
                 value = -1,
-                min=-5, max=5, step=0.1,         # Ranges of numeric value. Step refers to increments
-                minLength=0, maxLength=5,          # Ranges for character length inside input box
+                min=-5, max=5, step=0.1,
+                minLength=0, maxLength=5,
                 autoComplete='off',
-                disabled=False,                     # Disable input box
-                readOnly=False,                     # Make input box read only
-                required=True,                     # Require user to insert something into input box
-                size="100",                          # Number of characters that will be visible inside box
+                disabled=False,
+                readOnly=False,
+                required=True,
+                size="100",
                 style={'background-color':'#FFFFFF', 
                     'width':'10%',
                     'height':'10%', 
@@ -135,14 +135,14 @@ class model_visualizer():
             dcc.Input(
                 id='num-points',
                 type='number',
-                placeholder="200",  # A hint to the user of what can be entered in the control
-                debounce=True,                      # Changes to input are sent to Dash server only on enter or losing focus
+                placeholder="200",
+                debounce=True,
                 value =200,
-                min=2, max=10000,         # Ranges of numeric value. Step refers to increments
-                minLength=1, maxLength=5,          # Ranges for character length inside input box
+                min=2, max=10000,
+                minLength=1, maxLength=5,
                 autoComplete='off',
-                required=True,                     # Require user to insert something into input box
-                size="20",                          # Number of characters that will be visible inside box
+                required=True,
+                size="20",
                 style={'background-color':'#FFFFFF', 
                     'width':'20%', 
                     'height':'10%', 
@@ -258,6 +258,7 @@ class model_visualizer():
             drop_hist = model_train.train_2d(curr_x,
                             curr_y,
                             self.shifted_x,
+                            shifted_from=1,
                             model= self.model,
                             dim_inc= self.dim_inc,
                             num_epochs=self.num_epochs)

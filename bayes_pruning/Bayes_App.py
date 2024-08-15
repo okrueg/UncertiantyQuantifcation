@@ -36,14 +36,10 @@ class MnistApp():
 
         self.model = BNN(in_channels=3)
         
-        # self.model.init_dropout(use_reg_dropout= False, use_activations= False, original_method= False, continous_dropout= True,
-        #                         dropout_prob= 0.5, num_drop_channels=3, drop_certainty=1)
-        self.num_epochs = 90
-
-        #self.model = torch.load("model_20_BNN.path")
+        self.num_epochs = 2
 
         (self.train_loss, self.val_loss),(self.train_acc, self.test_acc), self.best_model_path = bayesUtils.train_Bayes(model=self.model,
-                                                                                                                    train_loader=self.train_loader,
+                                                                                                                    train_loader=self.test_loader,
                                                                                                                     test_loader=self.test_loader,
                                                                                                                     num_epochs=self.num_epochs,
                                                                                                                     num_mc= 5,
@@ -52,9 +48,7 @@ class MnistApp():
                                                                                                                     save=True,
                                                                                                                     save_mode='accuracy')
 
-        #self.model = torch.load(self.best_model_path)
-
-        self.final_loss, self.final_acc, self.label_acc = bayesUtils.test_Bayes(self.model, test_loader=self.test_loader, num_mc=10)
+        self.final_loss, self.final_calib_error, self.final_acc, self.label_acc = bayesUtils.test_Bayes(self.model, test_loader=self.test_loader, num_mc=10)
         self.label_acc = np.array(self.label_acc)
 
 

@@ -13,7 +13,6 @@ from torch.utils.data import DataLoader
 from torchmetrics.classification import MulticlassCalibrationError
 from datasets import loadData
 from model_architectures import BasicCNN
-from wideresnet import WideResNet
 
 DEVICE = 'cpu'
 if torch.backends.mps.is_available():
@@ -35,6 +34,8 @@ class ActivationLoss(torch.nn.CrossEntropyLoss):
         #activation_norm = torch.sqrt(torch.sum(torch.square(activations)))
         activation_norm = torch.norm(activations, p=2)
         #print(activation_norm)
+        #print((self.gamma *activation_norm).item())
+
 
         return super().forward(input, target) + self.gamma * activation_norm
 
@@ -60,7 +61,7 @@ def train_fas_mnist(model: BasicCNN,
     #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum= 0.9)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 7, gamma=0.90)
+    #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 5, gamma=0.90)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[int(0.5*num_epochs), int(0.8*num_epochs)], gamma=0.2)
 
     best_val_loss = np.inf
@@ -72,6 +73,9 @@ def train_fas_mnist(model: BasicCNN,
 
     train_accs = []
     test_accs = []
+
+   #train_calibs = []
+    test_calibs = []
 
     #-----Train ----
     for epoch in range(num_epochs):
@@ -105,7 +109,7 @@ def train_fas_mnist(model: BasicCNN,
                         model.eval()
                         first_output = model(x)
 
-                    model.dropout.weight_matrix = model.fc2.weight
+                    model.dropout.weight_matrix = model.fc3.weight
                     model.dropout.prev_output = first_output
 
                     # BUG Test
@@ -184,7 +188,7 @@ def train_fas_mnist(model: BasicCNN,
                             test_loader=test_loader,
                             verbose=False)
 
-        test_loss, test_acc = test_stats[0], test_stats[2]
+        test_loss, test_calib_error, test_acc = test_stats[0],test_stats[1], test_stats[2]
 
         overall_training_loss = overall_training_loss/len(train_loader)
         overall_val_loss = overall_val_loss/len(val_loader)
@@ -197,6 +201,8 @@ def train_fas_mnist(model: BasicCNN,
 
         train_losses.append(overall_training_loss)
         val_losses.append(overall_val_loss)
+
+        test_calibs.append(test_calib_error)
 
         train_output_scalar= torch.mean(train_output_scalar)
 
@@ -211,6 +217,7 @@ def train_fas_mnist(model: BasicCNN,
             print()
             print(f'Testing Loss:    {test_loss:.4f} | Testing Accuracy:   {test_acc:.4f}')
             print()
+            print(f'Test Calibration error:  {test_calib_error:.4f}')
         save_name = ""
         if save:
             if type(model).__name__ == "BasicCNN":
@@ -262,7 +269,7 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
                     with torch.no_grad():
                         model.eval()
                         first_output = model(x)
-                    model.dropout.weight_matrix = model.fc2.weight
+                    model.dropout.weight_matrix = model.fc3.weight
                     model.dropout.prev_output = first_output
 
             if evaluate:
@@ -309,8 +316,11 @@ def test_fas_mnist(model: BasicCNN, test_loader: DataLoader, evaluate= True, ver
 
     if verbose:
         print(f"Testing Loss: {overall_test_loss}")
+        print()
         print(f"Accuracies: {label_acc}")
         print(f"Total Accuracy: {total_acc:.4f}")
+        print()
+        print(f'Calibration error:{calib_error}')
         print()
 
 
